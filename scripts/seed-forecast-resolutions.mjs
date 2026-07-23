@@ -17,7 +17,7 @@
 import { CHROME_UA, loadEnvFile, runSeed } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { resolveR2StorageConfig, putR2JsonObject } from './_r2-storage.mjs';
-import { parseMetricKey, resolveHardSpec, extractMetricValue, extractMetricObservation } from './_forecast-resolution-eval.mjs';
+import { parseMetricKey, resolveHardSpec, extractMetricValue, extractMetricObservation, MARKET_SETTLEMENT_FEED_KEY } from './_forecast-resolution-eval.mjs';
 import { CONFLICT_COUNT_FEED_AVAILABLE, UNREST_COUNT_FEED_AVAILABLE, CONFLICT_COUNT_SOURCE_FEED, UNREST_COUNT_SOURCE_FEED } from './_forecast-resolution.mjs';
 import { computeScorecard, DEFAULT_ROLLING_WINDOW_DAYS } from './_forecast-scorecard.mjs';
 import { BETS_HISTORY_KEY } from './_forecast-bets-keys.mjs';
@@ -972,6 +972,18 @@ function createEntry(id, forecast, spec, generatedAt, snapshotAt, deadline) {
     probability: Number(forecast.probability),
     firstSeenProbability: Number(forecast.probability),
     calibration: forecast.calibration ? cloneJson(forecast.calibration) : undefined,
+    // Phase-2 bet-engine fields (#5525). This is an explicit whitelist, so the
+    // three-baseline contract (KTD5) and the settlement path both need their
+    // fields passed through here or they silently never reach the ledger:
+    // baselineProbability = the base-rate the ensemble is compared against;
+    // probabilitySource   = 'ensemble' | 'base_rate' (guards updateOpenWindow);
+    // passes              = per-pass ensemble probabilities (KTD1 post-hoc);
+    // marketSlug/Source   = what the settlement loader tracks through close.
+    baselineProbability: Number.isFinite(Number(forecast.baselineProbability)) ? Number(forecast.baselineProbability) : undefined,
+    probabilitySource: typeof forecast.probabilitySource === 'string' ? forecast.probabilitySource : undefined,
+    passes: Array.isArray(forecast.passes) ? cloneJson(forecast.passes) : undefined,
+    marketSlug: typeof forecast.marketSlug === 'string' ? forecast.marketSlug : undefined,
+    marketSource: typeof forecast.marketSource === 'string' ? forecast.marketSource : undefined,
     generatedAt,
     deadline,
     firstSeenAt: snapshotAt,
@@ -985,7 +997,20 @@ function updateOpenWindow(entry, forecast, generatedAt, snapshotAt) {
   if (entry.status !== 'pending' && entry.status !== 'pending-judge') return;
   if (generatedAt >= entry.deadline) return;
   const probability = Number(forecast.probability);
-  if (Number.isFinite(probability)) entry.probability = probability;
+  if (Number.isFinite(probability)) {
+    // Never downgrade an ensemble-sourced probability to a later base-rate
+    // (#5525): a bet falling out of top-K (or hitting the LLM budget) on a
+    // later run re-ingests with probabilitySource 'base_rate' — overwriting
+    // would silently revert Gate-2's graded probability to the placeholder.
+    const entryIsEnsemble = entry.probabilitySource === 'ensemble';
+    const forecastIsEnsemble = forecast.probabilitySource === 'ensemble';
+    if (!entryIsEnsemble || forecastIsEnsemble) {
+      entry.probability = probability;
+      if (typeof forecast.probabilitySource === 'string') entry.probabilitySource = forecast.probabilitySource;
+      if (Number.isFinite(Number(forecast.baselineProbability))) entry.baselineProbability = Number(forecast.baselineProbability);
+      if (forecastIsEnsemble && Array.isArray(forecast.passes)) entry.passes = cloneJson(forecast.passes);
+    }
+  }
   entry.lastSeenAt = Math.max(Number(entry.lastSeenAt || 0), snapshotAt);
 }
 
@@ -1106,7 +1131,159 @@ export function shapeResolutionFeed(key, data) {
     }
     return d;
   }
+  if (key.startsWith('economic:fred:v1:')) {
+    // FRED (#5525): stored as {series:{observations:[{date,value},...]}} per
+    // #5098; FRED marks missing values with '.'. Expose one record carrying the
+    // latest finite observation — `value(metric==<SERIES>)` reads it, and the
+    // observation date is the settlement `asOf` the calendar-derived grace
+    // gates on (KTD4). SERIES is the 4th key segment (exact `:0`-suffixed keys).
+    const series = key.split(':')[3];
+    const d = data?.data ?? data;
+    const observations = Array.isArray(d?.series?.observations) ? d.series.observations : [];
+    const finite = observations
+      .map((o) => ({ date: o?.date, value: Number(o?.value) }))
+      .filter((o) => o.date && Number.isFinite(o.value));
+    const latest = finite[finite.length - 1];
+    return latest ? [{ metric: series, value: latest.value, asOf: latest.date }] : [];
+  }
+  if (key === MARKET_SETTLEMENT_FEED_KEY) {
+    // Settlement feed (#5525 KTD2): records already carry {market, slug,
+    // yesPrice, asOf} — expose the array directly.
+    const d = data?.data ?? data;
+    return Array.isArray(d?.records) ? d.records : (Array.isArray(d) ? d : []);
+  }
   return data;
+}
+
+// ── Prediction-market settlement loader (#5525 KTD2) ─────────────────────
+//
+// The bootstrap feed only ever contains OPEN markets (its producer queries
+// closed:'false' / open status and clips yesPrice to [10,90]), so settled
+// outcomes must be fetched from the venues. Each market bet carries the
+// slug/ticker the loader needs; once a bet's deadline passes, the loader
+// queries the venue for the adjudicated outcome and appends it to the
+// settlement feed, where resolveHardSpec reads it as terminal truth. Bets
+// pend (not VOID) until the record lands, VOID after the settlement grace.
+
+const GAMMA_SETTLEMENT_BASE = 'https://gamma-api.polymarket.com';
+const KALSHI_SETTLEMENT_BASE = 'https://api.elections.kalshi.com/trade-api/v2';
+const SETTLEMENT_TTL_SECONDS = 45 * 24 * 60 * 60;
+const SETTLEMENT_FETCH_CAP_PER_RUN = 10;
+
+// Pure: extract a settled yesPrice (0-100) from a Gamma events-by-slug reply.
+// Returns null while unsettled/ambiguous — never a guess.
+export function parseGammaSettlement(eventsJson, title) {
+  const events = Array.isArray(eventsJson) ? eventsJson : [];
+  const wanted = normalizeTitle(title);
+  for (const event of events) {
+    const markets = Array.isArray(event?.markets) ? event.markets : [];
+    const byTitle = markets.find((m) => normalizeTitle(m?.question) === wanted);
+    const candidates = byTitle ? [byTitle] : markets;
+    for (const market of candidates) {
+      if (!market?.closed) continue;
+      const outcomes = parseJsonArray(market.outcomes);
+      const prices = parseJsonArray(market.outcomePrices);
+      if (!outcomes.length || outcomes.length !== prices.length) continue;
+      const yesIndex = outcomes.findIndex((o) => String(o).trim().toLowerCase() === 'yes');
+      if (yesIndex < 0) continue;
+      const price = Number(prices[yesIndex]);
+      if (!Number.isFinite(price)) continue;
+      return Math.round(price * 100);
+    }
+  }
+  return null;
+}
+
+// Pure: extract a settled yesPrice (0-100) from a Kalshi market reply.
+export function parseKalshiSettlement(marketJson) {
+  const market = marketJson?.market ?? marketJson;
+  const status = String(market?.status || '').toLowerCase();
+  if (status !== 'settled' && status !== 'finalized') return null;
+  const result = String(market?.result || '').toLowerCase();
+  if (result === 'yes') return 100;
+  if (result === 'no') return 0;
+  return null;
+}
+
+function normalizeTitle(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchVenueSettlement(entry) {
+  const headers = { 'User-Agent': CHROME_UA };
+  if (entry.marketSource === 'kalshi') {
+    const resp = await fetch(`${KALSHI_SETTLEMENT_BASE}/markets/${encodeURIComponent(entry.marketSlug)}`, {
+      headers, signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) throw new Error(`kalshi ${entry.marketSlug}: HTTP ${resp.status}`);
+    return parseKalshiSettlement(await resp.json());
+  }
+  const resp = await fetch(`${GAMMA_SETTLEMENT_BASE}/events?slug=${encodeURIComponent(entry.marketSlug)}`, {
+    headers, signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) throw new Error(`gamma ${entry.marketSlug}: HTTP ${resp.status}`);
+  return parseGammaSettlement(await resp.json(), entry.title);
+}
+
+async function writeRedisJson(key, value, ttlSeconds) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error('Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN');
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': CHROME_UA },
+    body: JSON.stringify(['SET', key, JSON.stringify(value), 'EX', ttlSeconds]),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) throw new Error(`Redis SET ${key} failed: HTTP ${resp.status}`);
+}
+
+// Best-effort: fetch adjudicated outcomes for due market bets and append them
+// to the settlement feed. Failures warn and skip — bets stay pending inside the
+// settlement grace, so a missed run self-heals on the next cycle.
+export async function updateMarketSettlements(ledger, nowMs, options = {}) {
+  const fetchSettlement = options.fetchSettlement || fetchVenueSettlement;
+  const readJson = options.readJson || readRedisJson;
+  const writeJson = options.writeJson || writeRedisJson;
+
+  const due = Object.values(normalizeLedger(ledger)).filter((entry) => entry?.status === 'pending'
+    && entry.spec?.sourceFeed === MARKET_SETTLEMENT_FEED_KEY
+    && Number(entry.deadline) <= nowMs
+    && typeof entry.marketSlug === 'string' && entry.marketSlug);
+  if (!due.length) return { fetched: 0, settled: 0 };
+
+  const existing = await Promise.resolve(readJson(MARKET_SETTLEMENT_FEED_KEY)).catch(() => null);
+  const records = Array.isArray(existing?.records) ? [...existing.records] : [];
+  const have = new Set(records.map((r) => r?.slug).filter(Boolean));
+  const targets = due.filter((entry) => !have.has(entry.marketSlug)).slice(0, SETTLEMENT_FETCH_CAP_PER_RUN);
+
+  let settled = 0;
+  for (const entry of targets) {
+    try {
+      const yesPrice = await fetchSettlement(entry);
+      if (yesPrice == null) continue; // not adjudicated yet — stays pending
+      records.push({ market: entry.title, slug: entry.marketSlug, yesPrice, asOf: nowMs });
+      settled += 1;
+    } catch (err) {
+      console.warn(`  [forecast-resolutions] settlement fetch failed for ${entry.marketSlug}: ${err?.message || err}`);
+    }
+  }
+  if (settled > 0) {
+    await Promise.resolve(writeJson(MARKET_SETTLEMENT_FEED_KEY, { records, updatedAt: nowMs }, SETTLEMENT_TTL_SECONDS))
+      .catch((err) => console.warn(`  [forecast-resolutions] settlement write failed: ${err?.message || err}`));
+  }
+  return { fetched: targets.length, settled };
 }
 
 async function readResolutionFeeds(ledger) {
@@ -1309,6 +1486,12 @@ async function buildLedgerForRun() {
     }),
   ]);
   const preLedger = ingestHistory(existingLedger || {}, [...history, ...betsHistory], nowMs);
+  // Populate the market settlement feed for due bets BEFORE the feed read so
+  // this run can resolve freshly adjudicated markets (#5525 KTD2). Best-effort:
+  // a failure leaves the bets pending within the settlement grace.
+  await updateMarketSettlements(preLedger, nowMs).catch((err) => {
+    console.warn(`  [forecast-resolutions] settlement update failed: ${err?.message || err}`);
+  });
   const feeds = await readResolutionFeeds(preLedger);
   const judgedOptions = buildLiveJudgedOptions(nowMs);
   const judgedArchive = await readJudgedNewsArchiveForLedger(preLedger, nowMs, judgedOptions);

@@ -56,7 +56,16 @@ export function generateBets(templates, feedsByKey, nowMs) {
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
+    // Optional per-template extras (e.g. calibration.marketPrice, marketSlug for
+    // the prediction-market settlement path). Spread FIRST so extras can never
+    // clobber the core bet contract fields below.
+    let extras = {};
+    if (template.decorate) {
+      try { extras = template.decorate(ctx) || {}; } catch { extras = {}; }
+    }
+
     bets.push({
+      ...extras,
       id,
       domain: template.domain,
       title: template.buildTitle ? String(template.buildTitle(ctx)) : question,
