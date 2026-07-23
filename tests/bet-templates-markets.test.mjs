@@ -187,3 +187,26 @@ describe('settlement parsing + loader', () => {
     assert.equal(fetches, 0);
   });
 });
+
+describe('settlement ambiguity guard (Greptile #5526)', () => {
+  it('returns null for a multi-market event whose children do not title-match', () => {
+    const events = [{
+      markets: [
+        { question: 'Will there be a 25bp cut?', closed: true, outcomes: '["Yes","No"]', outcomePrices: '["1","0"]' },
+        { question: 'Will there be a 50bp cut?', closed: true, outcomes: '["Yes","No"]', outcomePrices: '["0","1"]' },
+      ],
+    }];
+    // The saved bet title matches neither child — settling on "first closed"
+    // would grade with another market's outcome. Must stay pending (null).
+    assert.equal(parseGammaSettlement(events, 'Will there be no change in Fed rates?'), null);
+  });
+
+  it('still settles a single-market event when the title drifted', () => {
+    const events = [{
+      markets: [
+        { question: 'Will X happen? (updated wording)', closed: true, outcomes: '["Yes","No"]', outcomePrices: '["0","1"]' },
+      ],
+    }];
+    assert.equal(parseGammaSettlement(events, 'Will X happen?'), 0); // only one candidate → unambiguous
+  });
+});

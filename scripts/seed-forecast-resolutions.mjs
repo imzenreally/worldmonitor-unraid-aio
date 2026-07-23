@@ -1171,25 +1171,28 @@ const SETTLEMENT_TTL_SECONDS = 45 * 24 * 60 * 60;
 const SETTLEMENT_FETCH_CAP_PER_RUN = 10;
 
 // Pure: extract a settled yesPrice (0-100) from a Gamma events-by-slug reply.
-// Returns null while unsettled/ambiguous — never a guess.
+// Returns null while unsettled/ambiguous — never a guess. A multi-market event
+// whose children don't title-match the bet is AMBIGUOUS: settling on "the first
+// closed child" would grade the bet with another market's outcome, so the bet
+// stays pending instead (honest VOID after the settlement grace if it never
+// disambiguates). The single-child fallback is safe — there is only one
+// candidate the bet could have meant.
 export function parseGammaSettlement(eventsJson, title) {
   const events = Array.isArray(eventsJson) ? eventsJson : [];
   const wanted = normalizeTitle(title);
   for (const event of events) {
     const markets = Array.isArray(event?.markets) ? event.markets : [];
     const byTitle = markets.find((m) => normalizeTitle(m?.question) === wanted);
-    const candidates = byTitle ? [byTitle] : markets;
-    for (const market of candidates) {
-      if (!market?.closed) continue;
-      const outcomes = parseJsonArray(market.outcomes);
-      const prices = parseJsonArray(market.outcomePrices);
-      if (!outcomes.length || outcomes.length !== prices.length) continue;
-      const yesIndex = outcomes.findIndex((o) => String(o).trim().toLowerCase() === 'yes');
-      if (yesIndex < 0) continue;
-      const price = Number(prices[yesIndex]);
-      if (!Number.isFinite(price)) continue;
-      return Math.round(price * 100);
-    }
+    const candidate = byTitle ?? (markets.length === 1 ? markets[0] : null);
+    if (!candidate || !candidate.closed) continue;
+    const outcomes = parseJsonArray(candidate.outcomes);
+    const prices = parseJsonArray(candidate.outcomePrices);
+    if (!outcomes.length || outcomes.length !== prices.length) continue;
+    const yesIndex = outcomes.findIndex((o) => String(o).trim().toLowerCase() === 'yes');
+    if (yesIndex < 0) continue;
+    const price = Number(prices[yesIndex]);
+    if (!Number.isFinite(price)) continue;
+    return Math.round(price * 100);
   }
   return null;
 }
