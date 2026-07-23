@@ -139,6 +139,10 @@ export const webhookHandler = httpAction(async (ctx, request) => {
         timestamp: eventTimestamp,
       },
     );
+    await ctx.runMutation(
+      internal.payments.webhookMutations.markWebhookFailureRecovered,
+      { webhookId },
+    );
   } catch (error) {
     const errorKind = error instanceof Error && error.name
       ? error.name

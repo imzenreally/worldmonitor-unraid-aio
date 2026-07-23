@@ -230,7 +230,7 @@ describe("Dodo webhook failure tracking", () => {
     const second = await t.mutation(
       internal.payments.webhookMutations.recordWebhookFailure,
       failureArgs({
-      timestamp: BASE_TIMESTAMP + 5000,
+        timestamp: BASE_TIMESTAMP + 5000,
         receivedAt: BASE_TIMESTAMP + 5000,
         errorMessage: "still invalid",
       }),
@@ -277,6 +277,17 @@ describe("Dodo webhook failure tracking", () => {
       unresolvedCount: 2,
       eventTypes: [{ eventType: "subscription.renewed", count: 2 }],
     });
+
+    const diagnostics = await t.query(
+      internal.payments.webhookMutations.getWebhookFailureDiagnostics,
+      { limit: 10 },
+    );
+    expect(diagnostics).toMatchObject({
+      unresolvedCount: 2,
+      eventTypes: [{ eventType: "subscription.renewed", count: 2 }],
+    });
+    expect(diagnostics.failures).toHaveLength(2);
+    expect("rawPayload" in diagnostics.failures[0]).toBe(false);
   });
 
   test("resolves a failure and removes it from the unresolved diagnostic query", async () => {
@@ -310,5 +321,41 @@ describe("Dodo webhook failure tracking", () => {
       resolutionNote: "Reconciled the subscription manually",
     });
     expect(rows[0].resolvedAt).toBeTypeOf("number");
+
+    const summary = await t.run(async (ctx) =>
+      ctx.db.query("paymentWebhookFailureSummary").collect(),
+    );
+    expect(summary[0]).toMatchObject({
+      unresolvedCount: 0,
+      eventTypes: [],
+    });
+  });
+
+  test("automatically resolves a transient failure after a successful retry", async () => {
+    const t = convexTest(schema, modules);
+
+    await t.mutation(
+      internal.payments.webhookMutations.recordWebhookFailure,
+      failureArgs(),
+    );
+    await t.mutation(
+      internal.payments.webhookMutations.markWebhookFailureRecovered,
+      { webhookId: "wh_failure_001" },
+    );
+
+    const unresolved = await t.query(
+      internal.payments.webhookMutations.listUnresolvedWebhookFailures,
+      {},
+    );
+    expect(unresolved).toHaveLength(0);
+
+    const rows = await t.run(async (ctx) =>
+      ctx.db.query("paymentWebhookFailures").collect(),
+    );
+    expect(rows[0]).toMatchObject({
+      unresolved: false,
+      resolvedBy: "dodo-retry",
+      resolutionNote: "Processed successfully on provider retry",
+    });
   });
 });

@@ -185,6 +185,28 @@ export const recordWebhookFailure = internalMutation({
   },
 });
 
+async function removeUnresolvedFailureFromSummary(
+  ctx: MutationCtx,
+  existing: Doc<"paymentWebhookFailures">,
+  updatedAt: number,
+) {
+  if (!existing.unresolved) {
+    return;
+  }
+
+  const summary = await ctx.db
+    .query("paymentWebhookFailureSummary")
+    .withIndex("by_key", (q) => q.eq("key", "global"))
+    .unique();
+  if (summary) {
+    await ctx.db.patch(summary._id, {
+      unresolvedCount: Math.max(0, summary.unresolvedCount - 1),
+      eventTypes: adjustEventTypeCount(summary.eventTypes, existing.eventType, -1),
+      updatedAt,
+    });
+  }
+}
+
 /**
  * Emits one grouped Convex auto-Sentry event after a failure row commits.
  * Convex forwards structured console errors to Sentry; using a non-throwing
@@ -235,19 +257,30 @@ export const resolveWebhookFailure = internalMutation({
         : undefined,
     });
 
-    if (existing.unresolved) {
-      const summary = await ctx.db
-        .query("paymentWebhookFailureSummary")
-        .withIndex("by_key", (q) => q.eq("key", "global"))
-        .unique();
-      if (summary) {
-        await ctx.db.patch(summary._id, {
-          unresolvedCount: Math.max(0, summary.unresolvedCount - 1),
-          eventTypes: adjustEventTypeCount(summary.eventTypes, existing.eventType, -1),
-          updatedAt: Date.now(),
-        });
-      }
+    await removeUnresolvedFailureFromSummary(ctx, existing, Date.now());
+  },
+});
+
+/** Clear a transient incident when the same provider delivery later succeeds. */
+export const markWebhookFailureRecovered = internalMutation({
+  args: { webhookId: v.string() },
+  handler: async (ctx, { webhookId }) => {
+    const existing = await ctx.db
+      .query("paymentWebhookFailures")
+      .withIndex("by_webhookId", (q) => q.eq("webhookId", webhookId))
+      .first();
+    if (!existing?.unresolved) {
+      return;
     }
+
+    const recoveredAt = Date.now();
+    await ctx.db.patch(existing._id, {
+      unresolved: false,
+      resolvedAt: recoveredAt,
+      resolvedBy: "dodo-retry",
+      resolutionNote: "Processed successfully on provider retry",
+    });
+    await removeUnresolvedFailureFromSummary(ctx, existing, recoveredAt);
   },
 });
 
@@ -265,6 +298,33 @@ export const listUnresolvedWebhookFailures = internalQuery({
       .withIndex("by_unresolved_lastSeenAt", (q) => q.eq("unresolved", true))
       .order("desc")
       .take(limit);
+  },
+});
+
+export const getWebhookFailureDiagnostics = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(
+      1,
+      Math.min(args.limit ?? 100, MAX_DIAGNOSTIC_ROWS),
+    );
+    const summary = await ctx.db
+      .query("paymentWebhookFailureSummary")
+      .withIndex("by_key", (q) => q.eq("key", "global"))
+      .unique();
+    const failures = await ctx.db
+      .query("paymentWebhookFailures")
+      .withIndex("by_unresolved_lastSeenAt", (q) => q.eq("unresolved", true))
+      .order("desc")
+      .take(limit);
+
+    return {
+      unresolvedCount: summary?.unresolvedCount ?? 0,
+      eventTypes: summary?.eventTypes ?? [],
+      failures,
+    };
   },
 });
 
