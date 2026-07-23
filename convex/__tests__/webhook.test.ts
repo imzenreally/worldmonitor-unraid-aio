@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { afterEach, expect, test, describe } from "vitest";
+import { afterEach, expect, test, describe, vi } from "vitest";
 import { getFeaturesForPlan } from "../lib/entitlements";
 import { signUserId } from "../lib/identitySigning";
 import schema from "../schema";
@@ -68,6 +68,9 @@ const SIGNING_SECRET = "test-dodo-identity-signing-secret";
 
 afterEach(() => {
   delete process.env.DODO_IDENTITY_SIGNING_SECRET;
+  delete process.env.RESEND_API_KEY;
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -215,6 +218,47 @@ describe("webhook processWebhookEvent", () => {
     });
     expect(subs).toHaveLength(1);
     expect(subs[0].status).toBe("active");
+  });
+
+  test("subscription.active reactivation sends a welcome-back email", async () => {
+    vi.useFakeTimers();
+    process.env.RESEND_API_KEY = "re_test";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    const t = convexTest(schema, modules);
+
+    await seedProductPlan(t, "pdt_test_pro", "pro_monthly", "Pro Monthly");
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subscriptions", {
+        userId: "test-user-001",
+        dodoSubscriptionId: "sub_test_001",
+        dodoProductId: "pdt_test_pro",
+        planKey: "pro_monthly",
+        status: "expired",
+        currentPeriodStart: BASE_TIMESTAMP - 31 * 86400000,
+        currentPeriodEnd: BASE_TIMESTAMP - 86400000,
+        rawPayload: {},
+        updatedAt: BASE_TIMESTAMP - 86400000,
+      });
+    });
+
+    await processEvent(t, "wh_002_reactivation", "subscription.active", makeSubscriptionPayload(), BASE_TIMESTAMP);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const sends = fetchMock.mock.calls
+      .filter(([url]) => String(url).includes("api.resend.com"))
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as {
+        to: string[];
+        subject: string;
+        html: string;
+      });
+
+    expect(sends).toHaveLength(1);
+    expect(sends[0]?.to).toEqual(["test@example.com"]);
+    expect(sends[0]?.subject).toContain("Welcome back");
+    expect(sends[0]?.html).toContain("subscription is active again");
   });
 
   test("subscription.renewed extends billing period", async () => {

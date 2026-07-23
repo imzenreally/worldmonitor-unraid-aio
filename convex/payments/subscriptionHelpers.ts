@@ -703,13 +703,29 @@ export async function handleSubscriptionActive(
     }
   }
 
-  // Schedule welcome + admin notification emails (non-blocking, new subscriptions only)
+  // Schedule the appropriate customer email (non-blocking). A transition from
+  // any non-active lifecycle state is a reactivation and needs a welcome-back
+  // confirmation; an already-active row is a webhook replay/update and must
+  // remain silent.
   if (!email) {
     console.warn(
       `[subscriptionHelpers] subscription.active: no customer email — skipping welcome email (subscriptionId=${data.subscription_id})`,
     );
+  } else if (existing && existing.status !== "active") {
+    if (process.env.RESEND_API_KEY) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.payments.subscriptionEmails.sendReactivationEmail,
+        { userEmail: email, planKey },
+      );
+      console.log(`[subscriptionHelpers] subscription.active: scheduled reactivation email (subscriptionId=${data.subscription_id})`);
+    } else {
+      console.warn(
+        `[subscriptionHelpers] subscription.active: RESEND_API_KEY not set — skipping reactivation email (subscriptionId=${data.subscription_id})`,
+      );
+    }
   } else if (existing) {
-    console.log(`[subscriptionHelpers] subscription.active: reactivation — skipping welcome email (subscriptionId=${data.subscription_id})`);
+    console.log(`[subscriptionHelpers] subscription.active: existing active subscription — skipping email (subscriptionId=${data.subscription_id})`);
   } else if (process.env.RESEND_API_KEY) {
     await ctx.scheduler.runAfter(
       0,
