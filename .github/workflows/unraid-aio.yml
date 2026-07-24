@@ -55,6 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           ./tests/unraid-aio-package.test.sh
+          ./tests/ghcr-tag-guard.test.sh
           ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
           ./tests/unraid-aio-no-key.test.sh "$LOCAL_IMAGE"
           ./tests/unraid-aio-security.test.sh "$LOCAL_IMAGE" "$GITHUB_SHA"
@@ -150,6 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           ./tests/unraid-aio-package.test.sh
+          ./tests/ghcr-tag-guard.test.sh
           ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
           ./tests/unraid-aio-no-key.test.sh "$LOCAL_IMAGE"
           ./tests/unraid-aio-security.test.sh "$LOCAL_IMAGE" "$GITHUB_SHA"
@@ -188,12 +190,7 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/worldmonitor-unraid-aio"
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          for immutable_tag in "$version" "sha-$short_sha"; do
-            if docker buildx imagetools inspect "$image:$immutable_tag" >/dev/null 2>&1; then
-              echo "Refusing to overwrite immutable tag: $image:$immutable_tag" >&2
-              exit 1
-            fi
-          done
+          ./scripts/check-ghcr-tags-absent.sh "$image" "$version" "sha-$short_sha"
           docker tag "$LOCAL_IMAGE" "$image:$version"
           docker tag "$LOCAL_IMAGE" "$image:sha-$short_sha"
           docker push "$image:$version"

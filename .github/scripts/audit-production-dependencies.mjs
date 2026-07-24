@@ -26,10 +26,7 @@ export const BASELINE_ADVISORIES_BY_LOCKFILE = {
   'package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
   'consumer-prices-core/package-lock.json': [],
   'blog-site/package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
-  // shell-quote has no published version above the affected 1.8.4 release.
-  // It is reachable here only through react-native -> react-devtools-core, a
-  // mobile/dev-tooling chain that the Vite web build does not bundle.
-  'pro-test/package-lock.json': ['GHSA-395f-4hp3-45gv'],
+  'pro-test/package-lock.json': [],
   'scripts/package-lock.json': [],
   'docker/runtime-package-lock.json': [],
   'docker/unraid/redis-rest-package-lock.json': [],
