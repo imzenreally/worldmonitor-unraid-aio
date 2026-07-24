@@ -17,6 +17,7 @@ for file in \
   docker/unraid/patch-source-link.mjs \
   docker/unraid/redis-rest-package.json \
   docker/unraid/redis-rest-package-lock.json \
+  scripts/shared/runtime-endpoints.cjs \
   docker/unraid/run-relay.sh \
   docker/unraid/seed-scheduler.sh \
   docker/unraid/supervisord.conf \
@@ -45,6 +46,9 @@ require_text Dockerfile.unraid 'patch-source-link.mjs'
 require_text Dockerfile.unraid 'worldmonitor-unraid-aio/tree/${VCS_REF}'
 require_absent Dockerfile.unraid 'apk add --no-cache redis'
 require_absent Dockerfile.unraid 'npm install --ignore-scripts --omit=optional redis@4'
+require_absent Dockerfile.unraid 'COPY api /app/api'
+require_text scripts/ais-relay.cjs 'resolveCiiRpcUrl(process.env)'
+require_text scripts/ais-relay.cjs "process.env.RELAY_SHARED_SECRET || process.env.WORLDMONITOR_LOCAL_RELAY_KEY || ''"
 require_text docker/unraid/supervisord.conf '[program:valkey]'
 require_text docker/unraid/supervisord.conf '[program:redis-rest]'
 require_text docker/unraid/supervisord.conf '[program:ais-relay]'
@@ -54,6 +58,15 @@ require_text docker/unraid/supervisord.conf '[program:seed-scheduler]'
 require_text docker/unraid/entrypoint.sh '/config/secrets.env'
 require_text docker/unraid/entrypoint.sh 'chmod 0600'
 require_text docker/unraid/entrypoint.sh 'must not be a symbolic link'
+require_absent docker/unraid/entrypoint.sh 'export RELAY_SHARED_SECRET REDIS_PASSWORD REDIS_TOKEN'
+require_absent docker/unraid/entrypoint.sh 'export WORLDMONITOR_RELAY_KEY='
+require_absent docker/unraid/entrypoint.sh 'export WORLDMONITOR_VALID_KEYS='
+require_text docker/unraid/entrypoint.sh 'envsubst'
+require_text docker/unraid/entrypoint.sh '> /run/supervisord.conf'
+require_text docker/unraid/entrypoint.sh 'unset RELAY_SHARED_SECRET'
+require_text docker/unraid/entrypoint.sh 'exec /usr/bin/supervisord -c /run/supervisord.conf'
+require_text docker/unraid/supervisord.conf 'PORT="3004",WORLDMONITOR_RELAY_KEY="",WORLDMONITOR_LOCAL_RELAY_KEY="${RELAY_SHARED_SECRET}"'
+require_text docker/unraid/supervisord.conf 'WORLDMONITOR_RELAY_KEY="${RELAY_SHARED_SECRET}",WORLDMONITOR_LOCAL_RELAY_KEY=""'
 require_absent docker/unraid/entrypoint.sh 'chown -R'
 require_text docker/unraid/healthcheck.sh '/api/sidecar-health'
 require_text docker/unraid/healthcheck.sh 'valkey-cli'
@@ -121,19 +134,22 @@ for required in (
 configs = {item.attrib['Target']: item.attrib for item in root.findall('Config')}
 required_configs = {
     '8080', '/config', 'SEED_ON_START', 'SEED_INTERVAL_MINUTES', 'SEED_TIMEOUT',
-    'REDIS_MAXMEMORY', 'AISSTREAM_API_KEY', 'NASA_FIRMS_API_KEY',
-    'FINNHUB_API_KEY', 'FRED_API_KEY', 'EIA_API_KEY', 'AVIATIONSTACK_API',
+    'REDIS_MAXMEMORY', 'AISSTREAM_API_KEY', 'OPENSKY_CLIENT_ID',
+    'OPENSKY_CLIENT_SECRET', 'NASA_FIRMS_API_KEY', 'FINNHUB_API_KEY',
+    'FRED_API_KEY', 'EIA_API_KEY', 'AVIATIONSTACK_API',
     'TRAVELPAYOUTS_API_TOKEN', 'CLOUDFLARE_API_TOKEN', 'ACLED_ACCESS_TOKEN',
     'ACLED_EMAIL', 'ACLED_PASSWORD', 'GROQ_API_KEY', 'OPENROUTER_API_KEY',
     'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL',
+    'OLLAMA_API_URL', 'OLLAMA_API_KEY', 'OLLAMA_MODEL',
 }
 missing = sorted(required_configs - configs.keys())
 assert not missing, f'missing Config targets: {missing}'
 for key in (
-    'AISSTREAM_API_KEY', 'NASA_FIRMS_API_KEY', 'FINNHUB_API_KEY', 'FRED_API_KEY',
-    'EIA_API_KEY', 'AVIATIONSTACK_API', 'TRAVELPAYOUTS_API_TOKEN',
-    'CLOUDFLARE_API_TOKEN', 'ACLED_ACCESS_TOKEN', 'ACLED_PASSWORD',
-    'GROQ_API_KEY', 'OPENROUTER_API_KEY', 'LLM_API_KEY',
+    'AISSTREAM_API_KEY', 'OPENSKY_CLIENT_ID', 'OPENSKY_CLIENT_SECRET',
+    'NASA_FIRMS_API_KEY', 'FINNHUB_API_KEY', 'FRED_API_KEY', 'EIA_API_KEY',
+    'AVIATIONSTACK_API', 'TRAVELPAYOUTS_API_TOKEN', 'CLOUDFLARE_API_TOKEN',
+    'ACLED_ACCESS_TOKEN', 'ACLED_PASSWORD', 'GROQ_API_KEY',
+    'OPENROUTER_API_KEY', 'LLM_API_KEY', 'OLLAMA_API_KEY',
 ):
     assert configs[key].get('Mask') == 'true', f'{key} must be masked'
 PY

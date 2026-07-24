@@ -69,6 +69,7 @@ test('seed-health CII risk score freshness mirrors api/health riskScores', () =>
 
 test('relay CII warm-ping delegates risk-score health count to the RPC handler', () => {
   const relay = readRepoFile('scripts/ais-relay.cjs');
+  const runtimeEndpoints = readRepoFile('scripts/shared/runtime-endpoints.cjs');
   const handler = readRepoFile('server/worldmonitor/intelligence/v1/get-risk-scores.ts');
   const warmPing = extractSourceRange(
     relay,
@@ -92,8 +93,8 @@ test('relay CII warm-ping delegates risk-score health count to the RPC handler',
     'relay warm-ping must bypass CDN cache so the handler can refresh its own seed-meta on fresh fetches',
   );
   assert.match(
-    relay,
-    /_wm_warm_ping=/,
+    runtimeEndpoints,
+    /searchParams\.set\(['"]_wm_warm_ping['"]/,
     'CII warm-ping URL must carry a private cache-busting query parameter',
   );
   assert.match(

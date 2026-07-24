@@ -31,6 +31,7 @@ COPY scripts/lib/usni-fleet-parser.cjs ./scripts/lib/usni-fleet-parser.cjs
 # llm-telemetry.cjs is transitively imported by _seed-utils.mjs (SIGTERM
 # telemetry flush, #4954) — missing it = silent startup crash in the image.
 COPY scripts/lib/llm-telemetry.cjs ./scripts/lib/llm-telemetry.cjs
+COPY scripts/shared/runtime-endpoints.cjs ./scripts/shared/runtime-endpoints.cjs
 COPY scripts/shared/country-name-to-iso2.cjs ./scripts/shared/country-name-to-iso2.cjs
 # country-names.json backs the full name→ISO2 map (#5359 uniform country
 # scoping); required by country-name-to-iso2.cjs at startup.

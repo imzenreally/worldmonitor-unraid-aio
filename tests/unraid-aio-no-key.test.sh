@@ -42,7 +42,16 @@ for _ in $(seq 1 30); do
     '
     logs=$(docker logs "$name" 2>&1)
     grep -q 'disabled: optional AISSTREAM_API_KEY is not configured' <<<"$logs"
-    printf 'PASS: healthy without optional AIS key; all supervised services are capability-free appuser\n'
+    bootstrap_status=$(docker exec "$name" \
+      curl -sS -o /tmp/bootstrap-test.json -w '%{http_code}' \
+      'http://127.0.0.1:8080/api/bootstrap?keys=weatherAlerts')
+    [[ "$bootstrap_status" == 200 ]] || {
+      docker exec "$name" sh -c 'sed -n "1,20p" /tmp/bootstrap-test.json' >&2
+      fail_msg="bootstrap handler returned HTTP $bootstrap_status"
+      printf 'FAIL: %s\n' "$fail_msg" >&2
+      exit 1
+    }
+    printf 'PASS: healthy without optional AIS key; bundled bootstrap handler loads; all supervised services are capability-free appuser\n'
     exit 0
   fi
   sleep 2

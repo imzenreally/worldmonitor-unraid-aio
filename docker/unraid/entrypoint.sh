@@ -78,7 +78,7 @@ for key in RELAY_SHARED_SECRET REDIS_PASSWORD REDIS_TOKEN; do
     *[!0-9a-f]*) fail "$key must contain only lowercase hexadecimal characters" ;;
   esac
 done
-export RELAY_SHARED_SECRET REDIS_PASSWORD REDIS_TOKEN
+export REDIS_PASSWORD REDIS_TOKEN
 
 export LOCAL_API_PORT=46123
 export LOCAL_API_MODE=docker
@@ -127,6 +127,14 @@ node -e "const fs=require('fs');const p='/tmp/nginx.conf';let s=fs.readFileSync(
 chmod 0600 /tmp/nginx.conf
 chown appuser:appgroup /tmp/nginx.conf
 
+# Render the generated relay credential only into the two programs that need
+# one of its scoped aliases, then remove the source variable before supervisor
+# starts so unrelated child processes cannot inherit RELAY_SHARED_SECRET.
+export RELAY_SHARED_SECRET
+envsubst '$RELAY_SHARED_SECRET' < /app/docker/unraid/supervisord.conf > /run/supervisord.conf
+unset RELAY_SHARED_SECRET
+chmod 0600 /run/supervisord.conf
+
 # Hand known files and directories to the runtime UID; change /config last so
 # root can finish initialization without CAP_DAC_OVERRIDE.
 chown appuser:appgroup "$SECRETS" /config/redis /config/state \
@@ -138,4 +146,4 @@ if [ "${WM_TEST_MODE:-0}" = 1 ]; then
   exit 0
 fi
 
-exec /usr/bin/supervisord -c /app/docker/unraid/supervisord.conf
+exec /usr/bin/supervisord -c /run/supervisord.conf

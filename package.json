@@ -203,6 +203,7 @@
     "node-forge": "^1.4.0",
     "srvx": "^0.11.13",
     "protobufjs": "^7.6.2",
+    "brace-expansion": "^5.0.8",
     "ws": "$ws",
     "shell-quote": "^1.8.4"
   }

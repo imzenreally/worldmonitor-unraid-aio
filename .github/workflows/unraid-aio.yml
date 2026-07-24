@@ -54,6 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node tests/unraid-runtime-endpoints.test.cjs
           ./tests/unraid-aio-package.test.sh
           ./tests/ghcr-tag-guard.test.sh
           ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
@@ -150,6 +151,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node tests/unraid-runtime-endpoints.test.cjs
           ./tests/unraid-aio-package.test.sh
           ./tests/ghcr-tag-guard.test.sh
           ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
