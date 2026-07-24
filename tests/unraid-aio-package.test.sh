@@ -101,7 +101,8 @@ assert 'REPLACE_ME' not in text
 root = ET.fromstring(text)
 assert root.tag == 'Container'
 assert root.attrib.get('version') == '2'
-assert root.findtext('Name') == 'World Monitor AIO (Unofficial)'
+assert root.findtext('Name') == 'WorldMonitorAIO-Unofficial'
+assert re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', root.findtext('Name') or ''), 'template name must be a valid Docker container name'
 assert root.findtext('Repository') == 'ghcr.io/imzenreally/worldmonitor-unraid-aio:beta'
 assert root.findtext('Registry') == 'https://github.com/users/imzenreally/packages/container/package/worldmonitor-unraid-aio'
 assert root.findtext('WebUI') == 'http://[IP]:[PORT:8080]/'
