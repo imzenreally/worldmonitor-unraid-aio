@@ -1,11 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG BASE_IMAGE=worldmonitor-upstream:local
 
-FROM node:24-alpine AS seeder-deps
-WORKDIR /deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --omit=optional --ignore-scripts
-
 FROM node:24-alpine AS relay-deps
 WORKDIR /relay
 COPY scripts/package.json scripts/package-lock.json ./
@@ -16,16 +11,27 @@ WORKDIR /rest
 RUN npm init -y >/dev/null 2>&1 && npm install --ignore-scripts --omit=optional redis@4
 
 FROM ${BASE_IMAGE}
+ARG BUILD_VERSION=dev
+ARG VCS_REF=unknown
 USER root
+LABEL org.opencontainers.image.title="World Monitor AIO for Unraid" \
+      org.opencontainers.image.description="Unofficial all-in-one self-hosted World Monitor container" \
+      org.opencontainers.image.url="https://github.com/imzenreally/worldmonitor" \
+      org.opencontainers.image.source="https://github.com/imzenreally/worldmonitor" \
+      org.opencontainers.image.documentation="https://github.com/imzenreally/worldmonitor/blob/main/docs/UNRAID.md" \
+      org.opencontainers.image.vendor="imzenreally" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
 RUN apk add --no-cache redis curl coreutils openssl && \
     mkdir -p /config/redis /config/state /app/docker/unraid && \
     chown -R appuser:appgroup /config /app/docker/unraid
 
-COPY --from=seeder-deps /deps/node_modules /app/node_modules
-COPY --from=relay-deps /relay/node_modules /app/scripts/node_modules
+# Merge the relay/seeder dependencies into the upstream minimal API runtime.
+# This avoids shipping the entire frontend dependency tree in the final image.
+COPY --from=relay-deps /relay/node_modules /app/node_modules
 COPY --from=redis-rest-deps /rest/node_modules /app/docker/node_modules
 
-COPY package.json /app/package.json
 COPY scripts /app/scripts
 COPY api /app/api
 COPY server /app/server
@@ -38,7 +44,9 @@ COPY docker/unraid/ /app/docker/unraid/
 RUN node -e "const fs=require('fs');let p='/app/docker/redis-rest-proxy.mjs',s=fs.readFileSync(p,'utf8');s=s.replace(\"server.listen(PORT, '0.0.0.0', () =>\",\"server.listen(PORT, process.env.REDIS_REST_HOST || '127.0.0.1', () =>\");fs.writeFileSync(p,s);" && \
     node -e "const fs=require('fs');let p='/app/scripts/ais-relay.cjs',s=fs.readFileSync(p,'utf8');s=s.replace('server.listen(PORT, () =>',\"server.listen(PORT, process.env.RELAY_HOST || '127.0.0.1', () =>\");fs.writeFileSync(p,s);" && \
     chmod 0755 /app/docker/unraid/*.sh && \
-    chmod 0644 /app/docker/unraid/supervisord.conf
+    chmod 0644 /app/docker/unraid/supervisord.conf && \
+    rm -rf /usr/local/lib/node_modules/npm && \
+    rm -f /usr/local/bin/npm /usr/local/bin/npx
 
 EXPOSE 8080
 VOLUME ["/config"]

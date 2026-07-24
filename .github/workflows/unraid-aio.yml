@@ -1,0 +1,122 @@
+name: Unraid AIO image
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - Dockerfile.unraid
+      - docker/**
+      - scripts/**
+      - api/**
+      - server/**
+      - shared/**
+      - data/**
+      - src-tauri/sidecar/**
+      - templates/worldmonitor-aio.xml
+      - tests/unraid-aio-*.test.sh
+      - .github/workflows/unraid-aio.yml
+  push:
+    tags:
+      - 'v*-unraid.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: unraid-aio-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LOCAL_IMAGE: worldmonitor-aio:ci
+  TRIVY_IMAGE: aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+
+jobs:
+  build-test-publish:
+    name: Build, test, scan, and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          docker system df
+          df -h /
+
+      - name: Build upstream and AIO images
+        env:
+          BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'ci' }}
+          VCS_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          base_image="worldmonitor-upstream:${VCS_REF}"
+          docker build --pull -t "$base_image" -f Dockerfile .
+          docker build --pull \
+            --build-arg BASE_IMAGE="$base_image" \
+            --build-arg BUILD_VERSION="$BUILD_VERSION" \
+            --build-arg VCS_REF="$VCS_REF" \
+            -t "$LOCAL_IMAGE" -f Dockerfile.unraid .
+
+      - name: Run packaging and runtime tests
+        run: |
+          set -euo pipefail
+          ./tests/unraid-aio-package.test.sh
+          ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-no-key.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-security.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-isolation.test.sh "$LOCAL_IMAGE"
+
+      - name: Scan runtime image for high and critical vulnerabilities and secrets
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache/ \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln,secret \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            "$LOCAL_IMAGE"
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache/ \
+            -v "$PWD/artifacts:/output" \
+            "$TRIVY_IMAGE" image \
+            --format cyclonedx \
+            --output /output/worldmonitor-aio.cdx.json \
+            "$LOCAL_IMAGE"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: worldmonitor-aio-sbom-${{ github.sha }}
+          path: artifacts/worldmonitor-aio.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish release tags to GHCR
+        if: github.ref_type == 'tag'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/worldmonitor-aio"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag "$LOCAL_IMAGE" "$image:$version"
+          docker tag "$LOCAL_IMAGE" "$image:latest"
+          docker push "$image:$version"
+          docker push "$image:latest"
+          docker logout ghcr.io

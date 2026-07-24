@@ -102,6 +102,8 @@ npm run dev:energy     # energy.worldmonitor.app
 
 See the **[self-hosting guide](https://www.worldmonitor.app/docs/getting-started)** for deployment options (Vercel, Docker, static).
 
+This fork also publishes an **[unofficial all-in-one image and Unraid deployment guide](docs/UNRAID.md)**. It is maintained separately from the upstream World Monitor project.
+
 ---
 
 ## Tech Stack

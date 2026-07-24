@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-BASE_TAG="worldmonitor-upstream:${WORLDMONITOR_REVISION:-local}"
-AIO_TAG="${AIO_TAG:-worldmonitor-aio:dev}"
-docker build --pull -t "$BASE_TAG" -f Dockerfile .
-docker build --pull --build-arg BASE_IMAGE="$BASE_TAG" -t "$AIO_TAG" -f Dockerfile.unraid .
-printf 'Built %s from %s\n' "$AIO_TAG" "$BASE_TAG"
+
+revision="${WORLDMONITOR_REVISION:-$(git rev-parse --short=12 HEAD)}"
+version="${BUILD_VERSION:-dev}"
+base_tag="worldmonitor-upstream:${revision}"
+aio_tag="${AIO_TAG:-worldmonitor-aio:${version}}"
+
+docker build --pull -t "$base_tag" -f Dockerfile .
+docker build --pull \
+  --build-arg BASE_IMAGE="$base_tag" \
+  --build-arg BUILD_VERSION="$version" \
+  --build-arg VCS_REF="$revision" \
+  -t "$aio_tag" -f Dockerfile.unraid .
+
+printf 'Built %s from %s at revision %s\n' "$aio_tag" "$base_tag" "$revision"
