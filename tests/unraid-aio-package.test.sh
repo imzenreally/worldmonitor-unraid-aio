@@ -66,8 +66,11 @@ require_text .github/workflows/unraid-aio.yml './scripts/check-ghcr-tags-absent.
 require_text scripts/check-ghcr-tags-absent.sh '404) ;;'
 require_text scripts/check-ghcr-tags-absent.sh 'refusing to publish'
 require_absent .github/workflows/unraid-aio.yml 'docker buildx build --load --pull \'
+require_text tests/unraid-aio-no-key.test.sh 'logs=$(docker logs "$name" 2>&1)'
+require_absent tests/unraid-aio-no-key.test.sh 'docker logs "$name" 2>&1 | grep -q'
 require_text docs/UNRAID.md 'does not provide built-in user authentication'
 require_text docker/unraid/supervisord.conf 'user=root'
+
 program_count=$(grep -c '^\[program:' docker/unraid/supervisord.conf)
 appuser_count=$(grep -c '^user=appuser$' docker/unraid/supervisord.conf)
 [[ "$program_count" -eq "$appuser_count" ]] || fail 'every supervised application process must run as appuser'
