@@ -33,6 +33,8 @@
   <Config Name="Redis memory limit" Target="REDIS_MAXMEMORY" Default="256mb" Description="Maximum Redis cache memory inside the container." Type="Variable" Display="advanced" Required="true" Mask="false"/>
 
   <Config Name="AISStream API key" Target="AISSTREAM_API_KEY" Default="" Description="Optional live AIS vessel tracking." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="OpenSky client ID" Target="OPENSKY_CLIENT_ID" Default="" Description="Optional OpenSky OAuth client ID for authenticated military flight data." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="OpenSky client secret" Target="OPENSKY_CLIENT_SECRET" Default="" Description="Optional OpenSky OAuth client secret for authenticated military flight data." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="NASA FIRMS API key" Target="NASA_FIRMS_API_KEY" Default="" Description="Optional NASA FIRMS wildfire data." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="Finnhub API key" Target="FINNHUB_API_KEY" Default="" Description="Optional market data." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="FRED API key" Target="FRED_API_KEY" Default="" Description="Optional Federal Reserve economic data." Type="Variable" Display="advanced" Required="false" Mask="true"/>
@@ -48,4 +50,7 @@
   <Config Name="LLM API URL" Target="LLM_API_URL" Default="" Description="Optional OpenAI-compatible endpoint URL." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="LLM API key" Target="LLM_API_KEY" Default="" Description="Optional OpenAI-compatible endpoint key." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="LLM model" Target="LLM_MODEL" Default="" Description="Optional model name for the compatible endpoint." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Ollama API URL" Target="OLLAMA_API_URL" Default="" Description="Preferred OpenAI-compatible Ollama endpoint URL used by the seeders." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Ollama API key" Target="OLLAMA_API_KEY" Default="" Description="Optional authentication key for the Ollama-compatible endpoint." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Ollama model" Target="OLLAMA_MODEL" Default="" Description="Model name used by the Ollama-compatible endpoint." Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>

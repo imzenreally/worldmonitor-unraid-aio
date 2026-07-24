@@ -27,6 +27,7 @@ const crypto = require('crypto');
 const v8 = require('v8');
 const { WebSocketServer, WebSocket } = require('ws');
 const { parseProxyConfig, resolveProxyString } = require('./_proxy-utils.cjs');
+const { resolveCiiRelayKey, resolveCiiRpcUrl } = require('./shared/runtime-endpoints.cjs');
 const { countryNameToIso2 } = require('./shared/country-name-to-iso2.cjs');
 const {
   buildDedupMaterial,
@@ -4625,22 +4626,26 @@ function startTheaterPostureSeedLoop() {
 //   Vercel api project (gateway): WORLDMONITOR_RELAY_KEY=<same dedicated secret>
 // ─────────────────────────────────────────────────────────────
 const RELAY_API_KEY = process.env.WORLDMONITOR_RELAY_KEY || '';
+const LOCAL_RELAY_API_KEY = process.env.WORLDMONITOR_LOCAL_RELAY_KEY || '';
 // Surface the auth-mode at boot so misconfig (env var on wrong service,
 // typo'd name, missing on a fresh Railway deploy) is visible in the first
 // log lines instead of waiting for the first 401. PR #3565 review P2.
 if (!RELAY_API_KEY) {
-  console.warn('[Relay] WORLDMONITOR_RELAY_KEY not set — warm-pings will 401 (no Origin-trust fallback since #3541). Set the same value on the Railway relay and the Vercel api project.');
+  console.warn('[Relay] WORLDMONITOR_RELAY_KEY not set — hosted warm-pings will 401 (no Origin-trust fallback since #3541).');
 } else {
-  console.log('[Relay] WORLDMONITOR_RELAY_KEY configured — warm-pings will send X-WorldMonitor-Key');
+  console.log('[Relay] WORLDMONITOR_RELAY_KEY configured — hosted warm-pings will send X-WorldMonitor-Key');
+}
+if (LOCAL_RELAY_API_KEY) {
+  console.log('[Relay] WORLDMONITOR_LOCAL_RELAY_KEY configured — loopback CII warm-pings will authenticate locally');
 }
 
-function warmPingHeaders(extra = {}) {
+function warmPingHeaders(extra = {}, apiKey = RELAY_API_KEY) {
   const h = {
     'User-Agent': CHROME_UA,
     Origin: 'https://worldmonitor.app',
     ...extra,
   };
-  if (RELAY_API_KEY) h['X-WorldMonitor-Key'] = RELAY_API_KEY;
+  if (apiKey) h['X-WorldMonitor-Key'] = apiKey;
   return h;
 }
 
@@ -4652,7 +4657,8 @@ function warmPingHeaders(extra = {}) {
 // keeps CDN caching from hiding the handler from the warm-ping loop.
 // ─────────────────────────────────────────────────────────────
 const CII_WARM_PING_INTERVAL_MS = 8 * 60 * 1000; // 8 min (live cache TTL is 10 min)
-const CII_RPC_URL = 'https://api.worldmonitor.app/api/intelligence/v1/get-risk-scores';
+const CII_RPC_URL = resolveCiiRpcUrl(process.env);
+const CII_RELAY_API_KEY = resolveCiiRelayKey(process.env, CII_RPC_URL);
 
 function ciiWarmPingUrl() {
   return `${CII_RPC_URL}?_wm_warm_ping=${Date.now()}`;
@@ -4661,11 +4667,11 @@ function ciiWarmPingUrl() {
 async function seedCiiWarmPing() {
   try {
     const resp = await fetch(ciiWarmPingUrl(), {
-      headers: warmPingHeaders(),
+      headers: warmPingHeaders({}, CII_RELAY_API_KEY),
       signal: AbortSignal.timeout(60_000),
     });
     if (!resp.ok) {
-      console.warn(`[CII] Warm-ping failed: HTTP ${resp.status}${RELAY_API_KEY ? '' : ' (WORLDMONITOR_RELAY_KEY not set — 401 expected; set it on the relay AND the Vercel api project)'}`);
+      console.warn(`[CII] Warm-ping failed: HTTP ${resp.status}${CII_RELAY_API_KEY ? '' : ' (relay credential not configured for this CII endpoint)'}`);
       return;
     }
     const data = await resp.json();
