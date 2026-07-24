@@ -40,7 +40,8 @@ for _ in $(seq 1 30); do
       done
       [ "$seen" -ge 6 ]
     '
-    docker logs "$name" 2>&1 | grep -q 'disabled: optional AISSTREAM_API_KEY is not configured'
+    logs=$(docker logs "$name" 2>&1)
+    grep -q 'disabled: optional AISSTREAM_API_KEY is not configured' <<<"$logs"
     printf 'PASS: healthy without optional AIS key; all supervised services are capability-free appuser\n'
     exit 0
   fi
