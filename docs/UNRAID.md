@@ -55,7 +55,7 @@ Until the application has passed manual testing and been submitted to Community 
 
    | Field | Value |
    |---|---|
-   | Name | `worldmonitor-aio` |
+   | Name | `WorldMonitorAIO-Unofficial` |
    | Repository | `ghcr.io/imzenreally/worldmonitor-unraid-aio:beta` |
    | Network Type | `Bridge` |
    | Web UI | `http://[IP]:[PORT:8080]/` |
@@ -77,7 +77,7 @@ Until the application has passed manual testing and been submitted to Community 
    | `SEED_TIMEOUT` | `1800` |
    | `REDIS_MAXMEMORY` | `256mb` |
 
-7. Add only the optional API keys you intend to use.
+7. Add only the optional API keys you intend to use. See [Getting third-party API keys](UNRAID_API_KEYS.md) for official signup links and provider-specific instructions.
 8. Apply the container and open `http://UNRAID-IP:3300/`.
 
 The first seed pass can take several minutes. Panels populate incrementally, and an empty panel does not necessarily indicate a failed container.
@@ -85,6 +85,8 @@ The first seed pass can take several minutes. Panels populate incrementally, and
 ## Optional API keys
 
 All keys are optional. Keep them in the Unraid template variables; do not place them in screenshots, issues, or logs.
+
+For signup instructions, required permissions, and configuration notes for every provider below, see **[Getting third-party API keys](UNRAID_API_KEYS.md)**.
 
 | Variable | Feature |
 |---|---|

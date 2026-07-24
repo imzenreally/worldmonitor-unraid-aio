@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>World Monitor AIO (Unofficial)</Name>
+  <Name>WorldMonitorAIO-Unofficial</Name>
   <Repository>ghcr.io/imzenreally/worldmonitor-unraid-aio:beta</Repository>
   <Registry>https://github.com/users/imzenreally/packages/container/package/worldmonitor-unraid-aio</Registry>
   <Network>bridge</Network>
