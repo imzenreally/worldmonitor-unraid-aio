@@ -25,6 +25,7 @@ case " $* " in
     printf '%s\n' '{"token":"test-registry-token"}'
     ;;
   *'/manifests/'*)
+    case " $* " in *' --request HEAD '*) exit 65 ;; esac
     [ "${MOCK_LOOKUP_FAILURE:-false}" = true ] && exit 28
     printf '%s' "${MOCK_MANIFEST_STATUS:-500}"
     ;;
