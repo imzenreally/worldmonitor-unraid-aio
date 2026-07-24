@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker buildx build --load --pull \
+          docker buildx build --load \
             --build-arg "BASE_IMAGE=$BASE_IMAGE" \
             --build-arg "BUILD_VERSION=ci-${GITHUB_SHA::12}" \
             --build-arg "VCS_REF=$GITHUB_SHA" \
@@ -97,7 +97,7 @@ jobs:
   release:
     name: Publish protected beta release
     needs: build-test-scan
-    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'imzenreally/worldmonitor-unraid-aio'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'imzenreally/worldmonitor-unraid-aio'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     permissions:
@@ -111,6 +111,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-unraid\.[0-9]+$ ]] || {
+            echo 'Release tag must match v<major>.<minor>.<patch>-unraid.<revision>' >&2
+            exit 1
+          }
 
       - name: Require release commit on default branch
         shell: bash
@@ -129,7 +138,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           base_image="worldmonitor-upstream:${GITHUB_SHA}"
           docker buildx build --load --pull --no-cache -t "$base_image" -f Dockerfile .
-          docker buildx build --load --pull --no-cache \
+          docker buildx build --load --no-cache \
             --build-arg "BASE_IMAGE=$base_image" \
             --build-arg "BUILD_VERSION=$version" \
             --build-arg "VCS_REF=$GITHUB_SHA" \
@@ -179,6 +188,12 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/worldmonitor-unraid-aio"
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          for immutable_tag in "$version" "sha-$short_sha"; do
+            if docker buildx imagetools inspect "$image:$immutable_tag" >/dev/null 2>&1; then
+              echo "Refusing to overwrite immutable tag: $image:$immutable_tag" >&2
+              exit 1
+            fi
+          done
           docker tag "$LOCAL_IMAGE" "$image:$version"
           docker tag "$LOCAL_IMAGE" "$image:sha-$short_sha"
           docker push "$image:$version"

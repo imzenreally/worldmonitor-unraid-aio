@@ -79,4 +79,18 @@ for invalid_memory in $'256mb\nbind 0.0.0.0' 0 17gb; do
   fi
 done
 
+for invalid_scheduler_setting in \
+  'SEED_ON_START=maybe' \
+  'SEED_ON_START_DELAY_SECONDS=999999999999999999999999' \
+  'SEED_INTERVAL_MINUTES=not-a-number' \
+  'SEED_INTERVAL_MINUTES=010' \
+  'SEED_INTERVAL_MINUTES=10081' \
+  'SEED_INTERVAL_MINUTES=999999999999999999999999'; do
+  if docker run --rm --entrypoint env "$image" \
+    "$invalid_scheduler_setting" \
+    /app/docker/unraid/seed-scheduler.sh >/dev/null 2>&1; then
+    fail "seed scheduler accepted unsafe setting: $invalid_scheduler_setting"
+  fi
+done
+
 printf 'PASS: runtime image security contract\n'

@@ -60,6 +60,10 @@ require_text docker/unraid/healthcheck.sh 'valkey-cli'
 require_text docker/unraid/healthcheck.sh '3004/health'
 require_text docker/unraid/healthcheck.sh 'data = "[\"PING\"]"'
 require_text docker/unraid/seed-scheduler.sh 'data = "[\"PING\"]"'
+require_text .github/workflows/unraid-aio.yml "github.event_name == 'push'"
+require_text .github/workflows/unraid-aio.yml '^v[0-9]+\.[0-9]+\.[0-9]+-unraid\.[0-9]+$'
+require_text .github/workflows/unraid-aio.yml 'Refusing to overwrite immutable tag'
+require_absent .github/workflows/unraid-aio.yml 'docker buildx build --load --pull \'
 require_text docs/UNRAID.md 'does not provide built-in user authentication'
 require_text docker/unraid/supervisord.conf 'user=root'
 program_count=$(grep -c '^\[program:' docker/unraid/supervisord.conf)
