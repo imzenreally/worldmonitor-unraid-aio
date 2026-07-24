@@ -1,0 +1,9 @@
+{
+  "name": "worldmonitor-aio-redis-rest-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "redis": "4.7.1"
+  }
+}

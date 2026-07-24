@@ -1,0 +1,229 @@
+name: Unraid AIO image
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*-unraid.*'
+  workflow_dispatch:
+
+concurrency:
+  group: unraid-aio-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  LOCAL_IMAGE: worldmonitor-unraid-aio:ci
+  TRIVY_IMAGE: aquasec/trivy@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada # 0.72.0 linux/amd64 manifest
+
+jobs:
+  build-test-scan:
+    name: Build, test, and scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Build upstream image
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_image="worldmonitor-upstream:${GITHUB_SHA}"
+          docker buildx build --load --pull -t "$base_image" -f Dockerfile .
+          printf 'BASE_IMAGE=%s\n' "$base_image" >> "$GITHUB_ENV"
+
+      - name: Build Unraid AIO image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build --load \
+            --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+            --build-arg "BUILD_VERSION=ci-${GITHUB_SHA::12}" \
+            --build-arg "VCS_REF=$GITHUB_SHA" \
+            -t "$LOCAL_IMAGE" \
+            -f Dockerfile.unraid .
+
+      - name: Run package and runtime tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tests/unraid-aio-package.test.sh
+          ./tests/ghcr-tag-guard.test.sh
+          ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-no-key.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-security.test.sh "$LOCAL_IMAGE" "$GITHUB_SHA"
+          ./tests/unraid-aio-isolation.test.sh "$LOCAL_IMAGE"
+
+      - name: Scan runtime image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln,secret \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            "$LOCAL_IMAGE"
+
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/artifacts:/output" \
+            "$TRIVY_IMAGE" image \
+            --format cyclonedx \
+            --output /output/worldmonitor-unraid-aio.cdx.json \
+            "$LOCAL_IMAGE"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: worldmonitor-unraid-aio-sbom-${{ github.sha }}
+          path: artifacts/worldmonitor-unraid-aio.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Publish protected beta release
+    needs: build-test-scan
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'imzenreally/worldmonitor-unraid-aio'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-unraid\.[0-9]+$ ]] || {
+            echo 'Release tag must match v<major>.<minor>.<patch>-unraid.<revision>' >&2
+            exit 1
+          }
+
+      - name: Require release commit on default branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo 'Release tags must point to a commit contained in origin/main' >&2
+            exit 1
+          }
+
+      - name: Build release images from scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          base_image="worldmonitor-upstream:${GITHUB_SHA}"
+          docker buildx build --load --pull --no-cache -t "$base_image" -f Dockerfile .
+          docker buildx build --load --no-cache \
+            --build-arg "BASE_IMAGE=$base_image" \
+            --build-arg "BUILD_VERSION=$version" \
+            --build-arg "VCS_REF=$GITHUB_SHA" \
+            -t "$LOCAL_IMAGE" \
+            -f Dockerfile.unraid .
+
+      - name: Re-run release gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tests/unraid-aio-package.test.sh
+          ./tests/ghcr-tag-guard.test.sh
+          ./tests/unraid-aio-readonly.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-no-key.test.sh "$LOCAL_IMAGE"
+          ./tests/unraid-aio-security.test.sh "$LOCAL_IMAGE" "$GITHUB_SHA"
+          ./tests/unraid-aio-isolation.test.sh "$LOCAL_IMAGE"
+          SEED_TEST_WAIT_SECONDS=600 ./tests/unraid-aio-seed.test.sh "$LOCAL_IMAGE"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln,secret \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            "$LOCAL_IMAGE"
+
+      - name: Generate release SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/artifacts:/output" \
+            "$TRIVY_IMAGE" image \
+            --format spdx-json \
+            --output /output/worldmonitor-unraid-aio.spdx.json \
+            "$LOCAL_IMAGE"
+
+      - name: Push immutable release tags
+        id: publish
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          short_sha="${GITHUB_SHA::12}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/worldmonitor-unraid-aio"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          ./scripts/check-ghcr-tags-absent.sh "$image" "$version" "sha-$short_sha"
+          docker tag "$LOCAL_IMAGE" "$image:$version"
+          docker tag "$LOCAL_IMAGE" "$image:sha-$short_sha"
+          docker push "$image:$version"
+          docker push "$image:sha-$short_sha"
+          digest=$(docker buildx imagetools inspect "$image:$version" --format '{{.Manifest.Digest}}')
+          case "$digest" in sha256:*) ;; *) echo "Invalid published digest: $digest" >&2; exit 1 ;; esac
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ steps.publish.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-name: ${{ steps.publish.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          sbom-path: artifacts/worldmonitor-unraid-aio.spdx.json
+          push-to-registry: true
+
+      - name: Move beta channel after all release gates
+        shell: bash
+        env:
+          IMAGE: ${{ steps.publish.outputs.image }}
+          VERSION: ${{ steps.publish.outputs.version }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --tag "$IMAGE:beta" "$IMAGE@$DIGEST"
+          docker buildx imagetools inspect "$IMAGE:beta"
+          printf 'Published %s:%s and beta at %s\n' "$IMAGE" "$VERSION" "$DIGEST"

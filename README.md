@@ -102,6 +102,8 @@ npm run dev:energy     # energy.worldmonitor.app
 
 See the **[self-hosting guide](https://www.worldmonitor.app/docs/getting-started)** for deployment options (Vercel, Docker, static).
 
+This fork also publishes an **[unofficial all-in-one image and Unraid deployment guide](docs/UNRAID.md)**. Beginning 2026-07-23, GitHub user `imzenreally` modified the upstream work for AIO/Unraid distribution; the dated scope and attribution are recorded in [`NOTICE`](NOTICE). It is maintained separately from, and is not endorsed by, the upstream World Monitor project.
+
 ---
 
 ## Tech Stack

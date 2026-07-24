@@ -32,13 +32,13 @@ function readRepoJson(relativePath) {
 describe('security audit baseline', () => {
   it('allows currently baselined high advisories', () => {
     const report = auditReportWith({
-      name: '@clerk/clerk-js',
+      name: 'sharp',
       severity: 'high',
-      title: 'known clerk advisory',
-      url: 'https://github.com/advisories/GHSA-w24r-5266-9c3c',
+      title: 'sharp inherited vulnerabilities in libvips',
+      url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
     });
 
-    assert.deepEqual(collectUnbaselinedFindings(report, 'pro-test/package-lock.json'), []);
+    assert.deepEqual(collectUnbaselinedFindings(report, 'package-lock.json'), []);
   });
 
   it('ignores moderate production advisories for the high-severity PR gate', () => {
@@ -76,6 +76,7 @@ describe('security audit baseline', () => {
       'blog-site/package-lock.json',
       'consumer-prices-core/package-lock.json',
       'docker/runtime-package-lock.json',
+      'docker/unraid/redis-rest-package-lock.json',
       'package-lock.json',
       'pro-test/package-lock.json',
       'scripts/package-lock.json',
@@ -112,9 +113,7 @@ describe('security audit baseline', () => {
   });
 
   it('flags baseline entries that no longer match any current advisory', () => {
-    // Report carries the two pro-test advisories that ARE present in the current
-    // audit (the clerk advisory + shell-quote); only GHSA-qjx8, which no longer
-    // matches anything, must be flagged stale.
+    // Pro-test has no baseline entries after its dependency upgrades.
     const report = {
       vulnerabilities: {
         '@clerk/clerk-js': {
@@ -150,8 +149,8 @@ describe('security audit baseline', () => {
       },
     };
 
-    // The still-present ids are not reported as stale; GHSA-qjx8 (absent) is.
-    assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), ['GHSA-qjx8-664m-686j']);
+    // An empty baseline cannot produce a stale entry.
+    assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), []);
     // Root's baselined sharp advisory is present in the report, so nothing is stale.
     assert.deepEqual(collectStaleBaselineEntries(report, 'package-lock.json'), []);
   });

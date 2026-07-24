@@ -1,0 +1,22 @@
+World Monitor AIO for Unraid — Modification Notice
+
+World Monitor is Copyright (C) 2024-2026 Elie Habib and is distributed
+under the GNU Affero General Public License as stated in LICENSE.
+
+This unofficial derivative was modified by GitHub user "imzenreally" beginning
+2026-07-23, with the release-candidate packaging updated on 2026-07-24.
+The modifications package World Monitor as an all-in-one Unraid container and
+include container orchestration, an internal Valkey service and REST adapter,
+optional AIS relay handling, scheduled seeders, health checks, security
+hardening, source-link rewriting, Unraid metadata, tests, documentation, and
+release automation.
+
+This derivative is not affiliated with or endorsed by the upstream World
+Monitor maintainer. Complete corresponding source for each published image is
+available at:
+
+https://github.com/imzenreally/worldmonitor-unraid-aio
+
+Upstream source is available at:
+
+https://github.com/koala73/worldmonitor

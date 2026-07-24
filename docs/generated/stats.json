@@ -69,9 +69,10 @@
     "seed-freshness-monitor.yml",
     "test-linux-app.yml",
     "test.yml",
-    "typecheck.yml"
+    "typecheck.yml",
+    "unraid-aio.yml"
   ],
-  "workflowCount": 22,
+  "workflowCount": 23,
   "freshnessSources": 35,
   "freshnessRequiredForRisk": 2,
   "feedDefinitions": 567,

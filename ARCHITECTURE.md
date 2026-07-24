@@ -376,6 +376,7 @@ Runs before every `git push`:
 | `deploy-worker.yml` | Push to main (worker paths), manual | Deploys the `api-cors-preflight` Cloudflare Worker |
 | `build-desktop.yml` | Release tag, push, manual | Multi-platform Tauri build, code signing (macOS), AppImage library stripping (Linux), smoke test |
 | `docker-publish.yml` | Release, manual | Multi-arch image (amd64, arm64) pushed to GHCR |
+| `unraid-aio.yml` | AIO-related PRs, main, `v*-unraid.*` tags, manual | Builds, hardens, tests, scans, attests, and publishes the unofficial Unraid AIO beta image |
 | `publish-cli.yml` | `cli-v*` tag, manual | Tests and publishes the `worldmonitor` npm CLI (`cli/`) via OIDC trusted publishing (no token) with provenance |
 | `publish-python.yml` | `py-v*` tag, manual | Tests and publishes the `worldmonitor-sdk` PyPI package (`sdk/python/`) via OIDC trusted publishing (no token) with attestations |
 | `publish-ruby.yml` | `gem-v*` tag, manual | Tests and publishes the `worldmonitor` gem (`sdk/ruby/`) via RubyGems OIDC trusted publishing (no token) |

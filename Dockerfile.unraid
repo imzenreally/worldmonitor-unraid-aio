@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+ARG BASE_IMAGE=worldmonitor-upstream:local
+
+# Pinned node:24-alpine (linux/amd64 and linux/arm64 manifest list).
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS relay-deps
+WORKDIR /relay
+COPY scripts/package.json scripts/package-lock.json ./
+RUN npm ci --omit=dev --omit=optional --ignore-scripts
+
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS redis-rest-deps
+WORKDIR /rest
+COPY docker/unraid/redis-rest-package.json ./package.json
+COPY docker/unraid/redis-rest-package-lock.json ./package-lock.json
+RUN npm ci --omit=dev --omit=optional --ignore-scripts
+
+FROM ${BASE_IMAGE}
+ARG BUILD_VERSION=dev
+ARG VCS_REF=unknown
+USER root
+LABEL org.opencontainers.image.title="World Monitor AIO for Unraid" \
+      org.opencontainers.image.description="Unofficial all-in-one self-hosted World Monitor container" \
+      org.opencontainers.image.url="https://github.com/imzenreally/worldmonitor-unraid-aio" \
+      org.opencontainers.image.source="https://github.com/imzenreally/worldmonitor-unraid-aio" \
+      org.opencontainers.image.documentation="https://github.com/imzenreally/worldmonitor-unraid-aio/blob/main/docs/UNRAID.md" \
+      org.opencontainers.image.vendor="imzenreally" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
+RUN apk add --no-cache \
+      valkey=9.0.4-r0 \
+      valkey-cli=9.0.4-r0 \
+      curl=8.21.0-r0 \
+      coreutils=9.11-r0 \
+      openssl=3.5.7-r0 \
+      su-exec=0.3-r0 && \
+    mkdir -p /config /app/docker/unraid && \
+    chown appuser:appgroup /config /app/docker/unraid
+
+# Merge the relay/seeder dependencies into the upstream minimal API runtime.
+# This avoids shipping the entire frontend dependency tree in the final image.
+COPY --from=relay-deps /relay/node_modules /app/node_modules
+COPY --from=redis-rest-deps /rest/node_modules /app/docker/node_modules
+
+COPY scripts /app/scripts
+COPY api /app/api
+COPY server /app/server
+COPY shared /app/shared
+COPY data /app/data
+COPY docker/redis-rest-proxy.mjs /app/docker/redis-rest-proxy.mjs
+COPY docker/unraid/ /app/docker/unraid/
+COPY LICENSE /usr/share/licenses/worldmonitor-unraid-aio/LICENSE
+COPY NOTICE /usr/share/licenses/worldmonitor-unraid-aio/NOTICE
+COPY docs/THIRD_PARTY_NOTICES.md /usr/share/licenses/worldmonitor-unraid-aio/THIRD_PARTY_NOTICES.md
+
+# Keep the support services private even if another container joins this bridge.
+RUN node /app/docker/unraid/patch-loopback.mjs && \
+    WM_SOURCE_URL="https://github.com/imzenreally/worldmonitor-unraid-aio/tree/${VCS_REF}" node /app/docker/unraid/patch-source-link.mjs && \
+    chmod 0755 /app/docker/unraid/*.sh && \
+    chmod 0644 /app/docker/unraid/supervisord.conf && \
+    rm -rf /usr/local/lib/node_modules/npm && \
+    rm -f /usr/local/bin/npm /usr/local/bin/npx
+
+EXPOSE 8080
+VOLUME ["/config"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 CMD ["/sbin/su-exec", "appuser:appgroup", "/app/docker/unraid/healthcheck.sh"]
+ENTRYPOINT ["/app/docker/unraid/entrypoint.sh"]
