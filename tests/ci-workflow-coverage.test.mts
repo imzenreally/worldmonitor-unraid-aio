@@ -306,6 +306,12 @@ describe('CI workflow coverage', () => {
 
         if (!image || image === 'scratch' || isKnownStage) return;
 
+        // Dockerfile.unraid wraps an image built from this exact checkout by the
+        // dedicated workflow/build helper. It is a local build product rather
+        // than a mutable registry dependency; both callers use --load before
+        // passing the unique local tag as BASE_IMAGE.
+        if (dockerfile === 'Dockerfile.unraid' && image === '${BASE_IMAGE}') return;
+
         if (!/@sha256:[0-9a-f]{64}$/i.test(image)) {
           failures.push(`${dockerfile}:${index + 1} ${line.trim()}`);
         }

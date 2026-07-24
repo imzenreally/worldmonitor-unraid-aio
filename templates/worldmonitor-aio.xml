@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>World Monitor AIO</Name>
-  <Repository>ghcr.io/imzenreally/worldmonitor-aio:latest</Repository>
-  <Registry>https://ghcr.io/imzenreally/worldmonitor-aio</Registry>
+  <Name>World Monitor AIO (Unofficial)</Name>
+  <Repository>ghcr.io/imzenreally/worldmonitor-unraid-aio:beta</Repository>
+  <Registry>https://github.com/users/imzenreally/packages/container/package/worldmonitor-unraid-aio</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
   <Icon>https://raw.githubusercontent.com/koala73/worldmonitor/main/src-tauri/icons/icon.png</Icon>
-  <Overview>Unofficial all-in-one self-hosted World Monitor global intelligence dashboard with its local API, private Redis cache, optional AIS relay, and scheduled data seeders.</Overview>
-  <Description>Runs World Monitor, its local API, authenticated Redis, Redis REST adapter, optional AIS relay, and data seeder scheduler in one container. Only the web port is published. World Monitor has no built-in authentication; keep it LAN/VPN-only unless it is protected by an authenticated reverse proxy.</Description>
-  <Support>https://github.com/imzenreally/worldmonitor/issues</Support>
-  <Project>https://github.com/imzenreally/worldmonitor</Project>
+  <Overview>Unofficial all-in-one self-hosted World Monitor global intelligence dashboard with its local API, private Valkey cache, optional AIS relay, and scheduled data seeders.</Overview>
+  <Description>Runs World Monitor, its local API, authenticated Valkey, Redis REST adapter, optional AIS relay, and data seeder scheduler in one container. Only the web port is published. World Monitor has no built-in authentication; keep it LAN/VPN-only unless it is protected by an authenticated reverse proxy.</Description>
+  <Support>https://github.com/imzenreally/worldmonitor-unraid-aio/issues</Support>
+  <Project>https://github.com/imzenreally/worldmonitor-unraid-aio</Project>
   <TemplateURL>https://raw.githubusercontent.com/imzenreally/unraid-community-apps/main/templates/worldmonitor-aio.xml</TemplateURL>
   <ReadMe>https://raw.githubusercontent.com/imzenreally/unraid-community-apps/main/README.md</ReadMe>
   <Category>Tools:Status</Category>
@@ -21,12 +21,12 @@
   <Date>2026-07-23</Date>
   <Beta>true</Beta>
   <MinVer>6.12</MinVer>
-  <License>AGPL-3.0-or-later</License>
+  <License>AGPL-3.0-only</License>
   <Screenshot>https://raw.githubusercontent.com/imzenreally/unraid-community-apps/main/assets/worldmonitor-dashboard.png</Screenshot>
-  <ExtraParams>--read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /run:rw,nosuid,nodev,size=32m --security-opt=no-new-privileges:true --pids-limit=512 --log-opt max-size=25m --log-opt max-file=2</ExtraParams>
+  <ExtraParams>--read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /run:rw,nosuid,nodev,size=32m --security-opt=no-new-privileges:true --cap-drop=ALL --cap-add=CHOWN --cap-add=FOWNER --cap-add=SETUID --cap-add=SETGID --pids-limit=512 --log-opt max-size=25m --log-opt max-file=2</ExtraParams>
 
   <Config Name="Web UI" Target="8080" Default="3300" Mode="tcp" Description="World Monitor HTTP interface. Change the host port if 3300 is already in use." Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="Appdata" Target="/config" Default="/mnt/user/appdata/worldmonitor-aio" Mode="rw" Description="Generated internal secrets, Redis data, and seeder state. Use a dedicated directory." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Appdata" Target="/config" Default="/mnt/user/appdata/worldmonitor-aio" Mode="rw" Description="Generated internal secrets, Valkey data, and seeder state. Use a dedicated directory." Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="Seed on startup" Target="SEED_ON_START" Default="true" Description="Run the upstream data seeders after startup." Type="Variable" Display="always" Required="true" Mask="false"/>
   <Config Name="Seed interval minutes" Target="SEED_INTERVAL_MINUTES" Default="30" Description="Minutes between seed passes. Set to 0 to disable recurring seeding." Type="Variable" Display="always" Required="true" Mask="false"/>
   <Config Name="Per-seeder timeout seconds" Target="SEED_TIMEOUT" Default="1800" Description="Maximum runtime for eligible individual seeders. Set to 0 to disable the outer timeout." Type="Variable" Display="advanced" Required="true" Mask="false"/>

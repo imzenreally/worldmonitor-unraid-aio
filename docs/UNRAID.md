@@ -1,11 +1,13 @@
 # World Monitor AIO for Unraid
 
-This repository contains the source for an **unofficial** all-in-one Unraid image of [World Monitor](https://github.com/koala73/worldmonitor). It packages the upstream dashboard, local API, authenticated Redis cache, Redis REST adapter, optional AIS relay, and scheduled data seeders into one container.
+This repository contains the source for an **unofficial, non-affiliated** all-in-one Unraid image of [World Monitor](https://github.com/koala73/worldmonitor). It packages the upstream dashboard, local API, an authenticated [Valkey](https://valkey.io/) cache (Redis-protocol compatible), Redis REST adapter, optional AIS relay, and scheduled data seeders into one container.
+
+**Modification notice:** This derivative was modified by GitHub user `imzenreally` beginning 2026-07-23 for AIO/Unraid distribution. See [`NOTICE`](../NOTICE) for the dated scope of modifications and upstream attribution.
 
 Published image:
 
 ```text
-ghcr.io/imzenreally/worldmonitor-aio:latest
+ghcr.io/imzenreally/worldmonitor-unraid-aio:beta
 ```
 
 The Community Applications metadata is maintained separately at [imzenreally/unraid-community-apps](https://github.com/imzenreally/unraid-community-apps).
@@ -26,11 +28,12 @@ The Unraid template uses:
 - No array, media, or system mounts
 - `no-new-privileges`
 - A read-only root filesystem with limited temporary filesystems
+- Linux capabilities dropped except `CHOWN`, `FOWNER`, `SETUID`, and `SETGID`, used only during appdata initialization and the one-time privilege drop; normal application processes run as `appuser` with no effective capabilities
 - A PID limit and bounded Docker logs
 
-Redis, the Redis REST adapter, the local API, and the AIS relay bind to loopback inside the container. They are not published to the Docker network.
+Valkey, the Redis REST adapter, the local API, and the AIS relay bind to loopback inside the container. They are not published to the Docker network.
 
-The entrypoint and supervisor start as root so a newly created Unraid appdata directory can be initialized. All application services run as the unprivileged `appuser` account.
+The entrypoint and minimal supervisor run as root with only the four capabilities listed above so appdata can be initialized and services can be launched under the unprivileged account. Every application service runs as `appuser` with no effective capabilities; the runtime tests verify this directly from `/proc`. Because this is intentionally an AIO image, those application services share one unprivileged UID and therefore form one trust boundary; compromise of one internal service may expose another internal service's process environment. The host boundary remains constrained by the read-only filesystem, reduced capabilities, isolated appdata mount, and absence of the Docker socket or host devices.
 
 ## Requirements
 
@@ -53,7 +56,7 @@ Until the application has passed manual testing and been submitted to Community 
    | Field | Value |
    |---|---|
    | Name | `worldmonitor-aio` |
-   | Repository | `ghcr.io/imzenreally/worldmonitor-aio:latest` |
+   | Repository | `ghcr.io/imzenreally/worldmonitor-unraid-aio:beta` |
    | Network Type | `Bridge` |
    | Web UI | `http://[IP]:[PORT:8080]/` |
    | Port | Container `8080`, host `3300` or another unused TCP port |
@@ -62,7 +65,7 @@ Until the application has passed manual testing and been submitted to Community 
 5. Set Extra Parameters to:
 
    ```text
-   --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /run:rw,nosuid,nodev,size=32m --security-opt=no-new-privileges:true --pids-limit=512 --log-opt max-size=25m --log-opt max-file=2
+   --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /run:rw,nosuid,nodev,size=32m --security-opt=no-new-privileges:true --cap-drop=ALL --cap-add=CHOWN --cap-add=FOWNER --cap-add=SETUID --cap-add=SETGID --pids-limit=512 --log-opt max-size=25m --log-opt max-file=2
    ```
 
 6. Add these variables:
@@ -108,17 +111,17 @@ Some datasets use public sources and are populated by the seeders. API keys do n
 
 `/config` contains:
 
-- Generated internal Redis and API credentials
-- Redis database files
+- Generated internal Valkey, REST, and relay credentials
+- Valkey database files
 - Seeder status and timing files
 
-Back up the appdata directory while the container is stopped. Do not publish `secrets.env` from that directory.
+Back up the appdata directory while the container is stopped. Do not publish `secrets.env` from that directory. Optional third-party API keys entered through Unraid are masked in the template UI but, like all Docker environment variables, remain visible to users with Docker/Unraid administrative access through container inspection.
 
 To reset the installation completely, remove the container and delete only its dedicated appdata directory. Never point `/config` at an existing application directory.
 
 ## Health and troubleshooting
 
-Docker health verifies nginx, the local API, optional AIS relay when configured, and Redis.
+Docker health verifies nginx, the local API, optional AIS relay when configured, authenticated Valkey, and the authenticated Redis REST adapter.
 
 Useful commands from an Unraid terminal:
 
@@ -146,7 +149,7 @@ Before updating, back up `/config` and record the currently running digest:
 docker inspect --format '{{index .RepoDigests 0}}' worldmonitor-aio
 ```
 
-The `latest` tag follows the newest tested Unraid release. Immutable release tags use the upstream version plus an Unraid packaging revision, for example:
+During beta, the moving `beta` tag follows the newest tested Unraid release. Immutable release tags use the upstream version plus an Unraid packaging revision, for example:
 
 ```text
 2.10.0-unraid.1
@@ -156,11 +159,11 @@ To roll back, change the repository field to the prior immutable tag and apply t
 
 ## Support boundaries
 
-- Report AIO image, startup, seeding, persistence, or Unraid-template problems at [imzenreally/worldmonitor issues](https://github.com/imzenreally/worldmonitor/issues).
+- Report AIO image, startup, seeding, persistence, or Unraid-template problems at [imzenreally/worldmonitor issues](https://github.com/imzenreally/worldmonitor-unraid-aio/issues).
 - Report upstream application bugs only after confirming they also occur with the official upstream deployment.
 
 This packaging is not affiliated with or endorsed by the upstream World Monitor maintainer.
 
 ## License and source
 
-World Monitor and this derivative image are distributed under the GNU Affero General Public License, version 3 or later. The complete corresponding source for published images is available in this repository. Upstream copyright and attribution are retained in [`LICENSE`](../LICENSE).
+World Monitor and this derivative image are distributed under `AGPL-3.0-only`, matching the upstream package metadata and remaining within the broader grant in the upstream `LICENSE`. The complete corresponding source for each published image is available in this repository; OCI labels identify the exact release revision, and visible GitHub links in the packaged UI are rewritten to this matching source fork. Upstream copyright, attribution, and license text are retained in [`LICENSE`](../LICENSE). Valkey 9.0.4 is bundled under its BSD/MIT-family licenses and is identified in the generated SBOM.
