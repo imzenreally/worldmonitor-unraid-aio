@@ -33,12 +33,14 @@ if docker run --rm --entrypoint sh "$image" -c 'command -v npm >/dev/null 2>&1 |
   fail 'npm or npx is present in the final runtime image'
 fi
 docker run --rm --entrypoint node "$image" --version >/dev/null
-docker run --rm --entrypoint valkey-server "$image" --version | grep -q 'v=9.0.4'
+valkey_version=$(docker run --rm --entrypoint valkey-server "$image" --version)
+grep -q 'v=9.0.4' <<<"$valkey_version"
 if docker run --rm --entrypoint sh "$image" -c 'command -v redis-server >/dev/null 2>&1'; then
   fail 'Redis is present; the release must use pinned BSD-licensed Valkey'
 fi
 
-if docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$image" | grep -Eq '(API_KEY|PASSWORD|TOKEN)=.+'; then
+image_env=$(docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$image")
+if grep -Eq '(API_KEY|PASSWORD|TOKEN)=.+' <<<"$image_env"; then
   fail 'image config contains a baked credential-like environment value'
 fi
 
