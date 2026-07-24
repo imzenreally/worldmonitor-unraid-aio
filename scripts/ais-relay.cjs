@@ -4671,13 +4671,10 @@ function ciiWarmPingUrl() {
 
 async function seedCiiWarmPing() {
   try {
-    const resp = await fetch(
-      ciiWarmPingUrl(),
-      buildCiiFetchOptions(
-        warmPingHeaders({}, CII_RELAY_API_KEY),
-        AbortSignal.timeout(60_000),
-      ),
-    );
+    const resp = await fetch(ciiWarmPingUrl(), buildCiiFetchOptions(
+      warmPingHeaders({}, CII_RELAY_API_KEY),
+      AbortSignal.timeout(60_000),
+    ));
     if (!resp.ok) {
       console.warn(`[CII] Warm-ping failed: HTTP ${resp.status}${CII_RELAY_API_KEY ? '' : ' (relay credential not configured for this CII endpoint)'}`);
       return;
