@@ -65,6 +65,7 @@ require_text .github/workflows/unraid-aio.yml '^v[0-9]+\.[0-9]+\.[0-9]+-unraid\.
 require_text .github/workflows/unraid-aio.yml './scripts/check-ghcr-tags-absent.sh'
 require_text scripts/check-ghcr-tags-absent.sh '404) ;;'
 require_text scripts/check-ghcr-tags-absent.sh 'refusing to publish'
+require_absent scripts/check-ghcr-tags-absent.sh '--request HEAD'
 require_absent .github/workflows/unraid-aio.yml 'docker buildx build --load --pull \'
 require_text tests/unraid-aio-no-key.test.sh 'logs=$(docker logs "$name" 2>&1)'
 require_absent tests/unraid-aio-no-key.test.sh 'docker logs "$name" 2>&1 | grep -q'
