@@ -25,11 +25,12 @@ deadline=$((SECONDS + wait_seconds))
 while (( SECONDS < deadline )); do
   health=$(docker inspect --format '{{.State.Health.Status}}' "$name")
   dbsize=0
-  if [[ "$health" == healthy ]] && docker logs "$name" 2>&1 | grep -qF '[seed-scheduler] starting seed pass'; then
+  logs=$(docker logs "$name" 2>&1)
+  if [[ "$health" == healthy ]] && grep -qF '[seed-scheduler] starting seed pass' <<<"$logs"; then
     dbsize=$(docker exec --user appuser:appgroup "$name" sh -c 'REDISCLI_AUTH="$(awk -F= '\''$1 == "REDIS_PASSWORD" { print substr($0, index($0, "=") + 1); exit }'\'' /config/secrets.env)" valkey-cli dbsize' 2>/dev/null || printf '0')
   fi
   if [[ "$dbsize" =~ ^[0-9]+$ ]] && (( dbsize > 0 )); then
-    if docker logs "$name" 2>&1 | grep -Eq 'ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module'; then
+    if grep -Eq 'ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module' <<<"$logs"; then
       docker logs --tail 200 "$name" >&2
       printf 'FAIL: runtime module-loading error during seeding\n' >&2
       exit 1

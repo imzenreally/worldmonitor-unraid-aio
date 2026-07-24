@@ -34,8 +34,9 @@ done
 docker run --rm --network "$network" --entrypoint /usr/bin/curl "$image" \
   -fsS --max-time 5 "http://$name:8080/api/sidecar-health" >/dev/null
 
-docker run --rm --network "$network" --entrypoint /usr/bin/curl "$image" \
-  -fsS --max-time 5 "http://$name:8080/" | grep -q 'imzenreally/worldmonitor-unraid-aio'
+homepage=$(docker run --rm --network "$network" --entrypoint /usr/bin/curl "$image" \
+  -fsS --max-time 5 "http://$name:8080/")
+grep -q 'imzenreally/worldmonitor-unraid-aio' <<<"$homepage"
 
 for port in 6379 8079 3004 46123; do
   if docker run --rm --network "$network" --entrypoint /usr/bin/curl "$image" \
