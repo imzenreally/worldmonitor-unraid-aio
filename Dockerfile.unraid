@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE=worldmonitor-upstream:local
+
+FROM node:24-alpine AS seeder-deps
+WORKDIR /deps
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --omit=optional --ignore-scripts
+
+FROM node:24-alpine AS relay-deps
+WORKDIR /relay
+COPY scripts/package.json scripts/package-lock.json ./
+RUN npm ci --omit=dev --omit=optional --ignore-scripts
+
+FROM node:24-alpine AS redis-rest-deps
+WORKDIR /rest
+RUN npm init -y >/dev/null 2>&1 && npm install --ignore-scripts --omit=optional redis@4
+
+FROM ${BASE_IMAGE}
+USER root
+RUN apk add --no-cache redis curl coreutils openssl && \
+    mkdir -p /config/redis /config/state /app/docker/unraid && \
+    chown -R appuser:appgroup /config /app/docker/unraid
+
+COPY --from=seeder-deps /deps/node_modules /app/node_modules
+COPY --from=relay-deps /relay/node_modules /app/scripts/node_modules
+COPY --from=redis-rest-deps /rest/node_modules /app/docker/node_modules
+
+COPY package.json /app/package.json
+COPY scripts /app/scripts
+COPY api /app/api
+COPY server /app/server
+COPY shared /app/shared
+COPY data /app/data
+COPY docker/redis-rest-proxy.mjs /app/docker/redis-rest-proxy.mjs
+COPY docker/unraid/ /app/docker/unraid/
+
+# Keep the support services private even if another container joins this bridge.
+RUN node -e "const fs=require('fs');let p='/app/docker/redis-rest-proxy.mjs',s=fs.readFileSync(p,'utf8');s=s.replace(\"server.listen(PORT, '0.0.0.0', () =>\",\"server.listen(PORT, process.env.REDIS_REST_HOST || '127.0.0.1', () =>\");fs.writeFileSync(p,s);" && \
+    node -e "const fs=require('fs');let p='/app/scripts/ais-relay.cjs',s=fs.readFileSync(p,'utf8');s=s.replace('server.listen(PORT, () =>',\"server.listen(PORT, process.env.RELAY_HOST || '127.0.0.1', () =>\");fs.writeFileSync(p,s);" && \
+    chmod 0755 /app/docker/unraid/*.sh && \
+    chmod 0644 /app/docker/unraid/supervisord.conf
+
+EXPOSE 8080
+VOLUME ["/config"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 CMD ["/app/docker/unraid/healthcheck.sh"]
+ENTRYPOINT ["/app/docker/unraid/entrypoint.sh"]

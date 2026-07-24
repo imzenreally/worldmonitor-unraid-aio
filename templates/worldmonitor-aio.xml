@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>World Monitor AIO</Name>
+  <Repository>ghcr.io/REPLACE_ME/worldmonitor-aio:latest</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/koala73/worldmonitor/discussions</Support>
+  <Project>https://github.com/koala73/worldmonitor</Project>
+  <Overview>Self-hosted all-in-one World Monitor global intelligence dashboard with its API, AIS relay, Redis cache, and scheduled data seeders.</Overview>
+  <Description>Unofficial Unraid packaging prototype for World Monitor. Runs the dashboard, local API, authenticated Redis, Redis REST adapter, AIS relay, and seed scheduler in one container. Only the web port is published. World Monitor has no built-in user authentication; keep it LAN/VPN-only unless protected by an authenticated reverse proxy.</Description>
+  <Category>Tools:Status</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/koala73/worldmonitor/main/src-tauri/icons/icon.png</Icon>
+  <ExtraParams>--security-opt=no-new-privileges:true --pids-limit=512 --log-opt max-size=25m --log-opt max-file=2</ExtraParams>
+  <Config Name="Web UI" Target="8080" Default="3300" Mode="tcp" Description="World Monitor web interface" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="Appdata" Target="/config" Default="/mnt/user/appdata/worldmonitor" Mode="rw" Description="Internal secrets, Redis data, and scheduler state" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Seed on startup" Target="SEED_ON_START" Default="true" Description="Run the data seeders after startup" Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Seed interval minutes" Target="SEED_INTERVAL_MINUTES" Default="30" Description="Set to 0 to disable recurring seed runs" Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="AISStream API key" Target="AISSTREAM_API_KEY" Default="" Description="Optional live vessel tracking key" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="NASA FIRMS API key" Target="NASA_FIRMS_API_KEY" Default="" Description="Optional wildfire feed key" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Groq API key" Target="GROQ_API_KEY" Default="" Description="Optional AI intelligence summaries" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="OpenRouter API key" Target="OPENROUTER_API_KEY" Default="" Description="Optional AI fallback" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="LLM API URL" Target="LLM_API_URL" Default="" Description="Optional OpenAI-compatible endpoint" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="LLM API key" Target="LLM_API_KEY" Default="" Description="Optional OpenAI-compatible endpoint key" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="LLM model" Target="LLM_MODEL" Default="" Description="Optional model name" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>
