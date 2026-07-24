@@ -27,7 +27,12 @@ const crypto = require('crypto');
 const v8 = require('v8');
 const { WebSocketServer, WebSocket } = require('ws');
 const { parseProxyConfig, resolveProxyString } = require('./_proxy-utils.cjs');
-const { resolveCiiRelayKey, resolveCiiRpcUrl } = require('./shared/runtime-endpoints.cjs');
+const {
+  buildCiiFetchOptions,
+  buildCiiWarmPingUrl,
+  resolveCiiRelayKey,
+  resolveCiiRpcUrl,
+} = require('./shared/runtime-endpoints.cjs');
 const { countryNameToIso2 } = require('./shared/country-name-to-iso2.cjs');
 const {
   buildDedupMaterial,
@@ -87,7 +92,7 @@ const MEMORY_CLEANUP_THRESHOLD_GB = (() => {
   const n = Number(process.env.RELAY_MEMORY_CLEANUP_GB);
   return Number.isFinite(n) && n > 0 ? n : 2.0;
 })();
-const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET || '';
+const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET || process.env.WORLDMONITOR_LOCAL_RELAY_KEY || '';
 const RELAY_AUTH_HEADER = (process.env.RELAY_AUTH_HEADER || 'x-relay-key').toLowerCase();
 // Auth bypass: new canonical name + legacy alias. The new name's verbose
 // wording is intentional — it should be hard to set in production by accident.
@@ -4661,15 +4666,18 @@ const CII_RPC_URL = resolveCiiRpcUrl(process.env);
 const CII_RELAY_API_KEY = resolveCiiRelayKey(process.env, CII_RPC_URL);
 
 function ciiWarmPingUrl() {
-  return `${CII_RPC_URL}?_wm_warm_ping=${Date.now()}`;
+  return buildCiiWarmPingUrl(CII_RPC_URL);
 }
 
 async function seedCiiWarmPing() {
   try {
-    const resp = await fetch(ciiWarmPingUrl(), {
-      headers: warmPingHeaders({}, CII_RELAY_API_KEY),
-      signal: AbortSignal.timeout(60_000),
-    });
+    const resp = await fetch(
+      ciiWarmPingUrl(),
+      buildCiiFetchOptions(
+        warmPingHeaders({}, CII_RELAY_API_KEY),
+        AbortSignal.timeout(60_000),
+      ),
+    );
     if (!resp.ok) {
       console.warn(`[CII] Warm-ping failed: HTTP ${resp.status}${CII_RELAY_API_KEY ? '' : ' (relay credential not configured for this CII endpoint)'}`);
       return;

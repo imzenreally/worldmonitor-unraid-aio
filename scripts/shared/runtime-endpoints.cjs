@@ -26,4 +26,19 @@ function resolveCiiRelayKey(env = process.env, rpcUrl = resolveCiiRpcUrl(env)) {
   return String(env.WORLDMONITOR_RELAY_KEY || '').trim();
 }
 
-module.exports = { resolveCiiRelayKey, resolveCiiRpcUrl };
+function buildCiiWarmPingUrl(rpcUrl, timestamp = Date.now()) {
+  const url = new URL(rpcUrl);
+  url.searchParams.set('_wm_warm_ping', String(timestamp));
+  return url.toString();
+}
+
+function buildCiiFetchOptions(headers, signal) {
+  return { headers, signal, redirect: 'error' };
+}
+
+module.exports = {
+  buildCiiFetchOptions,
+  buildCiiWarmPingUrl,
+  resolveCiiRelayKey,
+  resolveCiiRpcUrl,
+};
