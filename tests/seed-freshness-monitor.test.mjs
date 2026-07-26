@@ -7,7 +7,7 @@ import {
   validateCompactHealthPayload,
 } from '../scripts/check-seed-freshness.mjs';
 
-describe('scheduled seed freshness monitor', () => {
+describe('seed freshness monitor', () => {
   it('alerts only when seed metadata has exceeded maxStaleMin', () => {
     const payload = {
       status: 'UNHEALTHY',
@@ -40,18 +40,18 @@ describe('scheduled seed freshness monitor', () => {
     );
   });
 
-  it('runs on a schedule, skips non-green main, and invokes the monitor script', () => {
+  it('is manual-only in the downstream Unraid fork', () => {
     const workflow = readFileSync(
       new URL('../.github/workflows/seed-freshness-monitor.yml', import.meta.url),
       'utf8',
     );
 
-    assert.match(workflow, /schedule:/);
-    assert.match(workflow, /cron:\s*['"]\*\/15 \* \* \* \*['"]/);
+    assert.doesNotMatch(workflow, /^\s*schedule:/m);
+    assert.match(workflow, /workflow_dispatch:/);
     assert.match(workflow, /actions\/setup-node@[a-f0-9]+/);
     assert.match(workflow, /node-version:\s*['"]24['"]/);
-    assert.match(workflow, /context\s*==\s*"gate"/);
-    assert.match(workflow, /gate_state.*success/s);
+    assert.doesNotMatch(workflow, /context\s*==\s*"gate"/);
+    assert.doesNotMatch(workflow, /statuses:\s*read/);
     assert.match(workflow, /node scripts\/check-seed-freshness\.mjs/);
   });
 });

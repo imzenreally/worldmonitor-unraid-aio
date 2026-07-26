@@ -4,13 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 import {
   BASELINE_ADVISORIES_BY_LOCKFILE,
+  buildBulkAuditPayload,
+  bulkAdvisoriesToAuditReport,
   collectAuditFindings,
   collectStaleBaselineEntries,
   collectUnbaselinedFindings,
   isInvokedAsScript,
+  parsePossiblyGzippedJson,
 } from '../.github/scripts/audit-production-dependencies.mjs';
 
 function auditReportWith(via) {
@@ -69,6 +73,53 @@ describe('security audit baseline', () => {
         url: 'https://github.com/advisories/GHSA-1111-2222-3333',
       },
     ]);
+  });
+
+  it('decodes a gzip audit response even when the registry omits its content-encoding header', () => {
+    const advisories = {
+      sharp: [{
+        url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
+        title: 'sharp inherited vulnerabilities in libvips',
+        severity: 'high',
+      }],
+    };
+
+    assert.deepEqual(parsePossiblyGzippedJson(gzipSync(JSON.stringify(advisories))), advisories);
+  });
+
+  it('converts the registry bulk response into the report consumed by the fail-closed gate', () => {
+    const report = bulkAdvisoriesToAuditReport({
+      sharp: [{
+        url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
+        title: 'sharp inherited vulnerabilities in libvips',
+        severity: 'high',
+      }],
+    });
+
+    assert.deepEqual(collectAuditFindings(report), [{
+      id: 'GHSA-f88m-g3jw-g9cj',
+      name: 'sharp',
+      severity: 'high',
+      title: 'sharp inherited vulnerabilities in libvips',
+      url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
+    }]);
+  });
+
+  it('builds the fallback bulk payload from production lockfile packages only', () => {
+    const payload = buildBulkAuditPayload({
+      packages: {
+        '': { name: 'example' },
+        'node_modules/astro': { version: '6.4.7' },
+        'node_modules/sharp': { version: '0.34.5' },
+        'node_modules/dev-only': { version: '1.0.0', dev: true },
+        'node_modules/astro/node_modules/sharp': { version: '0.34.4' },
+      },
+    });
+
+    assert.deepEqual(payload, {
+      astro: ['6.4.7'],
+      sharp: ['0.34.4', '0.34.5'],
+    });
   });
 
   it('tracks a baseline entry for each audited lockfile', () => {

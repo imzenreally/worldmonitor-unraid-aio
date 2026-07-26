@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 const SEVERITY_RANK = new Map([
   ['info', 0],
@@ -41,6 +42,44 @@ function advisoryId(advisory) {
   if (urlId) return urlId;
   if (advisory.source) return String(advisory.source);
   return `${advisory.name ?? 'unknown'}:${advisory.title ?? 'untitled'}`;
+}
+
+export function parsePossiblyGzippedJson(value) {
+  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes;
+  return JSON.parse(decoded.toString('utf8'));
+}
+
+export function buildBulkAuditPayload(lockfile) {
+  const packages = new Map();
+  for (const [path, metadata] of Object.entries(lockfile?.packages ?? {})) {
+    if (!path.includes('node_modules/') || metadata?.dev || !metadata?.version) continue;
+    const name = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
+    if (!name) continue;
+    if (!packages.has(name)) packages.set(name, new Set());
+    packages.get(name).add(String(metadata.version));
+  }
+  return Object.fromEntries(
+    [...packages.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, versions]) => [name, [...versions].sort()]),
+  );
+}
+
+export function bulkAdvisoriesToAuditReport(bulkAdvisories) {
+  const vulnerabilities = {};
+  for (const [name, advisories] of Object.entries(bulkAdvisories ?? {})) {
+    if (!Array.isArray(advisories) || advisories.length === 0) continue;
+    const via = advisories.map((advisory) => ({ ...advisory, name }));
+    const severity = via.reduce(
+      (highest, advisory) => severityRank(advisory.severity) > severityRank(highest)
+        ? advisory.severity
+        : highest,
+      'info',
+    );
+    vulnerabilities[name] = { name, severity, via };
+  }
+  return { vulnerabilities };
 }
 
 export function collectAuditFindings(report, auditLevel = 'high') {
@@ -137,6 +176,28 @@ function resolveAuditWorkspace({ workspace, packageJson, lockfile }) {
   };
 }
 
+function readBulkAuditReport(lockfile) {
+  const payload = buildBulkAuditPayload(JSON.parse(readFileSync(lockfile, 'utf8')));
+  const result = spawnSync('curl', [
+    '--fail-with-body',
+    '--silent',
+    '--show-error',
+    '--header', 'Content-Type: application/json',
+    '--header', 'Accept: application/json',
+    '--data-binary', '@-',
+    'https://registry.npmjs.org/-/npm/v1/security/advisories/bulk',
+  ], {
+    input: JSON.stringify(payload),
+    encoding: null,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.status !== 0 || !result.stdout?.length) {
+    const detail = result.stderr?.toString('utf8').trim();
+    throw new Error(`npm bulk audit fallback failed${detail ? `: ${detail}` : ''}`);
+  }
+  return bulkAdvisoriesToAuditReport(parsePossiblyGzippedJson(result.stdout));
+}
+
 function readAuditReport({ workspace, packageJson, lockfile }) {
   const auditWorkspace = resolveAuditWorkspace({ workspace, packageJson, lockfile });
   const result = spawnSync('npm', ['audit', '--omit=dev', '--json'], {
@@ -161,7 +222,14 @@ function readAuditReport({ workspace, packageJson, lockfile }) {
     }
 
     if (report.error) {
-      throw new Error(report.error.summary ?? report.error.detail ?? `npm audit failed for ${workspace}`);
+      const detail = [report.message, report.error.summary, report.error.detail]
+        .filter(Boolean)
+        .join(' ');
+      if (/invalid json response body/i.test(detail)) {
+        console.warn(`npm audit returned malformed compressed JSON for ${workspace}; using the registry bulk endpoint fallback.`);
+        return readBulkAuditReport(lockfile);
+      }
+      throw new Error(detail || `npm audit failed for ${workspace}`);
     }
 
     return report;
