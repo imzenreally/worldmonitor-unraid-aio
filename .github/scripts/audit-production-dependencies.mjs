@@ -24,10 +24,27 @@ export const BASELINE_ADVISORIES_BY_LOCKFILE = {
   // semver-major across both chains; baselined until the parents bump. The
   // same reasoning covers blog-site below: sharp runs only at Astro build
   // time over repo-owned images, and the fix requires astro@7 (semver-major).
-  'package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
+  //
+  // GHSA-5p2g-fcmc-qvqq and GHSA-w3rx-r6r6-pgpr affect image-size when it
+  // parses attacker-crafted JXL/HEIF/ICNS bytes. npm has no patched release
+  // (latest is 2.0.2 and the advisories cover every release through 2.0.2).
+  // Root reaches image-size through Metro (the React Native CLI dependency
+  // chain) and @loaders.gl/textures -> texture-compressor (the deck.gl build
+  // chain); pro-test reaches it through Metro. Repository code never imports
+  // image-size, and no request handler sends untrusted image bytes through
+  // these tooling paths. Remove this narrow per-lockfile baseline once a
+  // release newer than 2.0.2 exists and npm audit no longer reports either ID.
+  'package-lock.json': [
+    'GHSA-f88m-g3jw-g9cj',
+    'GHSA-5p2g-fcmc-qvqq',
+    'GHSA-w3rx-r6r6-pgpr',
+  ],
   'consumer-prices-core/package-lock.json': [],
   'blog-site/package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
-  'pro-test/package-lock.json': [],
+  'pro-test/package-lock.json': [
+    'GHSA-5p2g-fcmc-qvqq',
+    'GHSA-w3rx-r6r6-pgpr',
+  ],
   'scripts/package-lock.json': [],
   'docker/runtime-package-lock.json': [],
   'docker/unraid/redis-rest-package-lock.json': [],

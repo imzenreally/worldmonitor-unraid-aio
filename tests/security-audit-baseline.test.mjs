@@ -134,6 +134,37 @@ describe('security audit baseline', () => {
     ]);
   });
 
+  it('pins patched nanoid and js-yaml releases in every affected production lockfile', () => {
+    const rootLock = readRepoJson('package-lock.json');
+    const blogLock = readRepoJson('blog-site/package-lock.json');
+    const proLock = readRepoJson('pro-test/package-lock.json');
+    const consumerPricesLock = readRepoJson('consumer-prices-core/package-lock.json');
+    const rootPackage = readRepoJson('package.json');
+
+    assert.equal(rootPackage.overrides?.['markdownlint-cli2']?.['js-yaml'], '4.3.1');
+    assert.equal(rootLock.packages['node_modules/nanoid']?.version, '3.3.18');
+    assert.equal(rootLock.packages['node_modules/js-yaml']?.version, '4.3.1');
+    assert.equal(rootLock.packages['node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml']?.version, '3.15.1');
+    assert.equal(blogLock.packages['node_modules/nanoid']?.version, '3.3.18');
+    assert.equal(blogLock.packages['node_modules/js-yaml']?.version, '4.3.1');
+    assert.equal(blogLock.packages['node_modules/gray-matter/node_modules/js-yaml']?.version, '3.15.1');
+    assert.equal(proLock.packages['node_modules/nanoid']?.version, '3.3.18');
+    assert.equal(consumerPricesLock.packages['node_modules/js-yaml']?.version, '4.3.1');
+  });
+
+  it('baselines only the unpatched image-size parser advisories in non-server tooling', () => {
+    const imageSizeAdvisories = ['GHSA-5p2g-fcmc-qvqq', 'GHSA-w3rx-r6r6-pgpr'];
+
+    assert.deepEqual(
+      BASELINE_ADVISORIES_BY_LOCKFILE['package-lock.json'],
+      ['GHSA-f88m-g3jw-g9cj', ...imageSizeAdvisories],
+    );
+    assert.deepEqual(
+      BASELINE_ADVISORIES_BY_LOCKFILE['pro-test/package-lock.json'],
+      imageSizeAdvisories,
+    );
+  });
+
   it('keeps consumer-prices-core on the Fastify v5 audit fix', () => {
     const packageJson = readRepoJson('consumer-prices-core/package.json');
     const lockfile = readRepoJson('consumer-prices-core/package-lock.json');
@@ -164,7 +195,6 @@ describe('security audit baseline', () => {
   });
 
   it('flags baseline entries that no longer match any current advisory', () => {
-    // Pro-test has no baseline entries after its dependency upgrades.
     const report = {
       vulnerabilities: {
         '@clerk/clerk-js': {
@@ -197,12 +227,30 @@ describe('security audit baseline', () => {
             url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
           }],
         },
+        'image-size': {
+          name: 'image-size',
+          severity: 'high',
+          via: [
+            {
+              name: 'image-size',
+              severity: 'high',
+              title: 'image-size JXL and HEIF parser denial of service',
+              url: 'https://github.com/advisories/GHSA-5p2g-fcmc-qvqq',
+            },
+            {
+              name: 'image-size',
+              severity: 'high',
+              title: 'image-size ICNS parser denial of service',
+              url: 'https://github.com/advisories/GHSA-w3rx-r6r6-pgpr',
+            },
+          ],
+        },
       },
     };
 
-    // An empty baseline cannot produce a stale entry.
+    // Pro-test's unpatched image-size advisories are present, so neither is stale.
     assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), []);
-    // Root's baselined sharp advisory is present in the report, so nothing is stale.
+    // Root's baselined sharp and image-size advisories are all present.
     assert.deepEqual(collectStaleBaselineEntries(report, 'package-lock.json'), []);
   });
 

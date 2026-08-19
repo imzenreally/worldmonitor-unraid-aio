@@ -209,6 +209,44 @@ describe('CI workflow coverage', () => {
     );
   });
 
+  it('ignores workflow_run SHAs that are not open PR heads', () => {
+    assert.match(
+      deployGateWorkflow,
+      /commits\/\$SHA\/pulls\?per_page=100/,
+      'deploy-gate.yml must use the triggering commit to look up associated PRs',
+    );
+    assert.match(
+      deployGateWorkflow,
+      /select\(\.state == \\"open\\" and \.head\.sha == \\"\$SHA\\"\)/,
+      'deploy-gate.yml must verify that the triggering SHA is the head of an open PR',
+    );
+    assert.match(
+      deployGateWorkflow,
+      /workflow_run: no open PR has head SHA \$SHA; skipping/,
+      'deploy-gate.yml must skip workflow_run events that do not belong to an open PR',
+    );
+    assert.match(
+      deployGateWorkflow,
+      /gh api --paginate "repos\/\$REPO\/pulls\?state=open&per_page=100"/,
+      'the scheduled sweep must paginate open PRs instead of silently stopping at 100',
+    );
+  });
+
+  it('keeps commit-status descriptions bounded to GitHub’s 140-character limit', () => {
+    const descriptions = [...deployGateWorkflow.matchAll(/--field description="([^"]*)"/g)]
+      .map((match) => match[1]);
+
+    assert.ok(descriptions.length > 0, 'deploy-gate.yml must publish commit-status descriptions');
+    for (const description of descriptions) {
+      assert.ok(description.length <= 140, `status description literal is too long: ${description}`);
+      assert.doesNotMatch(
+        description,
+        /\$(?:pending|failed)(?:\s|$)/,
+        `status description must not embed an unbounded check list: ${description}`,
+      );
+    }
+  });
+
   it('treats sidecar changes as code for PR smoke gating', () => {
     assert.ok(
       testWorkflow.includes('^src-tauri\\/sidecar\\/'),
