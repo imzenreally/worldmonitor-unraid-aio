@@ -209,6 +209,14 @@ describe('CI workflow coverage', () => {
     );
   });
 
+  it('grants the token read access for commit-to-PR lookups', () => {
+    assert.match(
+      deployGateWorkflow,
+      /permissions:\s+statuses: write\s+pull-requests: read/,
+      'deploy-gate.yml must explicitly grant pull-requests: read for its PR API calls',
+    );
+  });
+
   it('ignores workflow_run SHAs that are not open PR heads', () => {
     assert.match(
       deployGateWorkflow,

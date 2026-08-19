@@ -22,6 +22,7 @@ on:
 
 permissions:
   statuses: write
+  pull-requests: read
 
 jobs:
   gate:
@@ -48,7 +49,7 @@ jobs:
             shas="$SHA"
           else
             # schedule / workflow_dispatch — sweep open PRs whose gate status
-            # is still pending. Public-repo reads need no extra permission.
+            # is still pending. The workflow grants pull-requests: read above.
             shas=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].head.sha' | sort -u | while read -r s; do
               state=$(gh api "repos/$REPO/commits/$s/status" \
                 --jq '[.statuses[] | select(.context == "gate")] | sort_by(.updated_at) | last | .state // "missing"')
