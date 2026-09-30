@@ -15,18 +15,9 @@ const SEVERITY_RANK = new Map([
 ]);
 
 export const BASELINE_ADVISORIES_BY_LOCKFILE = {
-  // GHSA-f88m-g3jw-g9cj (sharp inherited libvips decode CVEs) needs attacker-
-  // crafted image BYTES fed to sharp. Neither root chain decodes untrusted
-  // input: @vercel/og's sharp only converts satori-rendered first-party
-  // buffers (brief carousel), and @xenova/transformers is consumed solely by
-  // the browser ML worker (src/workers/ml.worker.ts) — its Node-only sharp
-  // binary never executes server-side. The clean fix (sharp 0.35.x) is
-  // semver-major across both chains; baselined until the parents bump. The
-  // same reasoning covers blog-site below: sharp runs only at Astro build
-  // time over repo-owned images, and the fix requires astro@7 (semver-major).
-  'package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
+  'package-lock.json': [],
   'consumer-prices-core/package-lock.json': [],
-  'blog-site/package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
+  'blog-site/package-lock.json': [],
   'pro-test/package-lock.json': [],
   'scripts/package-lock.json': [],
   'docker/runtime-package-lock.json': [],

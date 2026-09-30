@@ -22,6 +22,7 @@ on:
 
 permissions:
   statuses: write
+  pull-requests: read
 
 jobs:
   gate:
@@ -36,12 +37,20 @@ jobs:
           required='["changes","docs-stats","unit","consumer-prices","sidecar","convex-tests","variant-smoke-full","resilience-validation-smoke","digest-image","typecheck","biome","public-docs","security-audit"]'
 
           if [ -n "$SHA" ]; then
-            # workflow_run event — evaluate exactly the triggering SHA.
+            # workflow_run also fires for scheduled workflows on main. This is a
+            # PR gate, so ignore a triggering SHA unless it is an open PR head.
+            open_pr=$(gh api "repos/$REPO/commits/$SHA/pulls?per_page=100" \
+              --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\")][0].number // empty")
+            if [ -z "$open_pr" ]; then
+              echo "workflow_run: no open PR has head SHA $SHA; skipping"
+              exit 0
+            fi
+            echo "workflow_run: evaluating open PR #$open_pr"
             shas="$SHA"
           else
             # schedule / workflow_dispatch — sweep open PRs whose gate status
-            # is still pending. Public-repo reads need no extra permission.
-            shas=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].head.sha' | sort -u | while read -r s; do
+            # is still pending. The workflow grants pull-requests: read above.
+            shas=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].head.sha' | sort -u | while read -r s; do
               state=$(gh api "repos/$REPO/commits/$s/status" \
                 --jq '[.statuses[] | select(.context == "gate")] | sort_by(.updated_at) | last | .state // "missing"')
               if [ "$state" = "pending" ]; then echo "$s"; fi
@@ -96,11 +105,15 @@ jobs:
           print(' '.join(f'{name}={latest[name]}' for name in required))
           print('pending=' + ','.join(name for name in required if latest[name] == 'pending'))
           print('failed=' + ','.join(name for name in required if latest[name] not in ('success', 'skipped')))
+          print('pending_count=' + str(sum(latest[name] == 'pending' for name in required)))
+          print('failed_count=' + str(sum(latest[name] not in ('success', 'skipped') for name in required)))
           ")
 
             echo "attempt $attempt: $status"
             pending=$(echo "$status" | awk -F= '/^pending=/ { print $2 }')
             failed=$(echo "$status" | awk -F= '/^failed=/ { print $2 }')
+            pending_count=$(echo "$status" | awk -F= '/^pending_count=/ { print $2 }')
+            failed_count=$(echo "$status" | awk -F= '/^failed_count=/ { print $2 }')
 
             if [ -z "$pending" ]; then
               break
@@ -114,7 +127,7 @@ jobs:
             gh api "repos/$REPO/statuses/$SHA" --method POST \
               --field state="pending" \
               --field context="gate" \
-              --field description="Waiting for required PR gates: $pending"
+              --field description="Waiting for $pending_count required PR gate(s)"
             continue
           fi
 
@@ -123,7 +136,7 @@ jobs:
             gh api "repos/$REPO/statuses/$SHA" --method POST \
               --field state="failure" \
               --field context="gate" \
-              --field description="Required PR gates did not pass: $failed"
+              --field description="$failed_count required PR gate(s) failed"
             continue
           fi
 

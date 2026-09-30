@@ -34,7 +34,7 @@ function readRepoJson(relativePath) {
 }
 
 describe('security audit baseline', () => {
-  it('allows currently baselined high advisories', () => {
+  it('does not suppress a high advisory when no accepted-risk baseline remains', () => {
     const report = auditReportWith({
       name: 'sharp',
       severity: 'high',
@@ -42,7 +42,7 @@ describe('security audit baseline', () => {
       url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
     });
 
-    assert.deepEqual(collectUnbaselinedFindings(report, 'package-lock.json'), []);
+    assert.equal(collectUnbaselinedFindings(report, 'package-lock.json').length, 1);
   });
 
   it('ignores moderate production advisories for the high-severity PR gate', () => {
@@ -134,6 +134,33 @@ describe('security audit baseline', () => {
     ]);
   });
 
+  it('pins patched production dependency releases in every affected lockfile', () => {
+    const rootLock = readRepoJson('package-lock.json');
+    const blogLock = readRepoJson('blog-site/package-lock.json');
+    const proLock = readRepoJson('pro-test/package-lock.json');
+    const consumerPricesLock = readRepoJson('consumer-prices-core/package-lock.json');
+    const rootPackage = readRepoJson('package.json');
+
+    assert.equal(rootPackage.devDependencies?.['js-yaml'], '^4.3.2');
+    assert.equal(rootPackage.overrides?.['@istanbuljs/load-nyc-config']?.['js-yaml'], '3.15.2');
+    assert.equal(rootPackage.dependencies?.['maplibre-gl'], '^6.4.1');
+    assert.equal(rootLock.packages['node_modules/nanoid']?.version, '3.3.18');
+    assert.equal(rootLock.packages['node_modules/js-yaml']?.version, '4.3.2');
+    assert.equal(rootLock.packages['node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml']?.version, '3.15.2');
+    assert.match(rootLock.packages['node_modules/maplibre-gl']?.version, /^6\./);
+    assert.equal(blogLock.packages['node_modules/nanoid']?.version, '3.3.18');
+    assert.equal(blogLock.packages['node_modules/js-yaml']?.version, '4.3.2');
+    assert.equal(blogLock.packages['node_modules/gray-matter/node_modules/js-yaml']?.version, '3.15.2');
+    assert.equal(proLock.packages['node_modules/nanoid']?.version, '3.3.18');
+    assert.equal(consumerPricesLock.packages['node_modules/js-yaml']?.version, '4.3.2');
+  });
+
+  it('keeps every production advisory baseline empty after patched upgrades', () => {
+    for (const entries of Object.values(BASELINE_ADVISORIES_BY_LOCKFILE)) {
+      assert.deepEqual(entries, []);
+    }
+  });
+
   it('keeps consumer-prices-core on the Fastify v5 audit fix', () => {
     const packageJson = readRepoJson('consumer-prices-core/package.json');
     const lockfile = readRepoJson('consumer-prices-core/package-lock.json');
@@ -164,7 +191,6 @@ describe('security audit baseline', () => {
   });
 
   it('flags baseline entries that no longer match any current advisory', () => {
-    // Pro-test has no baseline entries after its dependency upgrades.
     const report = {
       vulnerabilities: {
         '@clerk/clerk-js': {
@@ -197,12 +223,12 @@ describe('security audit baseline', () => {
             url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
           }],
         },
+
       },
     };
 
-    // An empty baseline cannot produce a stale entry.
+    // Empty baselines cannot produce stale entries.
     assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), []);
-    // Root's baselined sharp advisory is present in the report, so nothing is stale.
     assert.deepEqual(collectStaleBaselineEntries(report, 'package-lock.json'), []);
   });
 

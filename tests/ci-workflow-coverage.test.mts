@@ -15,6 +15,8 @@ const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 
 const deployGateWorkflow = read(resolve(workflowsDir, 'deploy-gate.yml'));
 const securityAuditWorkflow = read(resolve(workflowsDir, 'security-audit.yml'));
+const mcpLiveSmokeWorkflow = read(resolve(workflowsDir, 'mcp-live-smoke.yml'));
+const feedValidationWorkflow = read(resolve(workflowsDir, 'feed-validation.yml'));
 const securityAuditScript = read(resolve(root, '.github/scripts/audit-production-dependencies.mjs'));
 const testWorkflow = read(resolve(workflowsDir, 'test.yml'));
 const lintCodeWorkflow = read(resolve(workflowsDir, 'lint-code.yml'));
@@ -148,6 +150,17 @@ function securityAuditMatrixLockfiles(): string[] {
 }
 
 describe('CI workflow coverage', () => {
+  it('keeps the upstream MCP production probe manual-only in the Unraid fork', () => {
+    assert.doesNotMatch(mcpLiveSmokeWorkflow, /^\s{2}(?:schedule|push):/m);
+    assert.match(mcpLiveSmokeWorkflow, /^\s{2}workflow_dispatch:/m);
+  });
+
+  it('runs feed validation only for relevant pushes or manual diagnosis', () => {
+    assert.doesNotMatch(feedValidationWorkflow, /^\s{2}schedule:/m);
+    assert.match(feedValidationWorkflow, /^\s{2}push:/m);
+    assert.match(feedValidationWorkflow, /^\s{2}workflow_dispatch:/m);
+  });
+
   it('runs the public documentation boundary on docs-only pull requests', () => {
     const publicDocsJob = workflowJobBlock(lintCodeWorkflow, 'public-docs');
 
@@ -207,6 +220,52 @@ describe('CI workflow coverage', () => {
       /unit \+ typecheck/i,
       'deploy-gate.yml must not regress to the old unit+typecheck-only gate',
     );
+  });
+
+  it('grants the token read access for commit-to-PR lookups', () => {
+    assert.match(
+      deployGateWorkflow,
+      /permissions:\s+statuses: write\s+pull-requests: read/,
+      'deploy-gate.yml must explicitly grant pull-requests: read for its PR API calls',
+    );
+  });
+
+  it('ignores workflow_run SHAs that are not open PR heads', () => {
+    assert.match(
+      deployGateWorkflow,
+      /commits\/\$SHA\/pulls\?per_page=100/,
+      'deploy-gate.yml must use the triggering commit to look up associated PRs',
+    );
+    assert.match(
+      deployGateWorkflow,
+      /select\(\.state == \\"open\\" and \.head\.sha == \\"\$SHA\\"\)/,
+      'deploy-gate.yml must verify that the triggering SHA is the head of an open PR',
+    );
+    assert.match(
+      deployGateWorkflow,
+      /workflow_run: no open PR has head SHA \$SHA; skipping/,
+      'deploy-gate.yml must skip workflow_run events that do not belong to an open PR',
+    );
+    assert.match(
+      deployGateWorkflow,
+      /gh api --paginate "repos\/\$REPO\/pulls\?state=open&per_page=100"/,
+      'the scheduled sweep must paginate open PRs instead of silently stopping at 100',
+    );
+  });
+
+  it('keeps commit-status descriptions bounded to GitHub’s 140-character limit', () => {
+    const descriptions = [...deployGateWorkflow.matchAll(/--field description="([^"]*)"/g)]
+      .map((match) => match[1]);
+
+    assert.ok(descriptions.length > 0, 'deploy-gate.yml must publish commit-status descriptions');
+    for (const description of descriptions) {
+      assert.ok(description.length <= 140, `status description literal is too long: ${description}`);
+      assert.doesNotMatch(
+        description,
+        /\$(?:pending|failed)(?:\s|$)/,
+        `status description must not embed an unbounded check list: ${description}`,
+      );
+    }
   });
 
   it('treats sidecar changes as code for PR smoke gating', () => {

@@ -80,10 +80,14 @@ export function isLocalizableTextField(textField: unknown): boolean {
   return false;
 }
 
-export function localizeMapLabels(map: LocalizableMap | null | undefined): void {
+export function localizeMapLabels(map: unknown): void {
   if (!map) return;
 
-  const style = map?.getStyle?.();
+  // Keep this helper decoupled from MapLibre's version-specific generic
+  // signatures. It only relies on the small runtime surface declared above.
+  const localizableMap = map as LocalizableMap;
+
+  const style = localizableMap.getStyle?.();
   if (!style?.layers) return;
 
   const expr = getLocalizedNameExpression();
@@ -93,7 +97,7 @@ export function localizeMapLabels(map: LocalizableMap | null | undefined): void 
 
     let textField: unknown;
     try {
-      textField = map.getLayoutProperty?.(layer.id, 'text-field');
+      textField = localizableMap.getLayoutProperty?.(layer.id, 'text-field');
     } catch {
       continue;
     }
@@ -101,7 +105,7 @@ export function localizeMapLabels(map: LocalizableMap | null | undefined): void 
     if (!isLocalizableTextField(textField)) continue;
 
     try {
-      map.setLayoutProperty?.(layer.id, 'text-field', expr);
+      localizableMap.setLayoutProperty?.(layer.id, 'text-field', expr);
     } catch {}
   }
 }
