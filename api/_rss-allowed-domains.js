@@ -319,6 +319,7 @@ export default [
   "www.corriere.it",
   "www.rt.com",
   "www.alarabiya.net",
+  "news.tuoitre.vn",
   "tuoitrenews.vn",
   "www.yonhapnewstv.co.kr",
   "www.chosun.com",
