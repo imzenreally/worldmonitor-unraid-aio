@@ -15,6 +15,8 @@ const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 
 const deployGateWorkflow = read(resolve(workflowsDir, 'deploy-gate.yml'));
 const securityAuditWorkflow = read(resolve(workflowsDir, 'security-audit.yml'));
+const mcpLiveSmokeWorkflow = read(resolve(workflowsDir, 'mcp-live-smoke.yml'));
+const feedValidationWorkflow = read(resolve(workflowsDir, 'feed-validation.yml'));
 const securityAuditScript = read(resolve(root, '.github/scripts/audit-production-dependencies.mjs'));
 const testWorkflow = read(resolve(workflowsDir, 'test.yml'));
 const lintCodeWorkflow = read(resolve(workflowsDir, 'lint-code.yml'));
@@ -148,6 +150,17 @@ function securityAuditMatrixLockfiles(): string[] {
 }
 
 describe('CI workflow coverage', () => {
+  it('keeps the upstream MCP production probe manual-only in the Unraid fork', () => {
+    assert.doesNotMatch(mcpLiveSmokeWorkflow, /^\s{2}(?:schedule|push):/m);
+    assert.match(mcpLiveSmokeWorkflow, /^\s{2}workflow_dispatch:/m);
+  });
+
+  it('runs feed validation only for relevant pushes or manual diagnosis', () => {
+    assert.doesNotMatch(feedValidationWorkflow, /^\s{2}schedule:/m);
+    assert.match(feedValidationWorkflow, /^\s{2}push:/m);
+    assert.match(feedValidationWorkflow, /^\s{2}workflow_dispatch:/m);
+  });
+
   it('runs the public documentation boundary on docs-only pull requests', () => {
     const publicDocsJob = workflowJobBlock(lintCodeWorkflow, 'public-docs');
 

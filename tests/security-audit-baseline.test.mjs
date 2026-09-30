@@ -34,7 +34,7 @@ function readRepoJson(relativePath) {
 }
 
 describe('security audit baseline', () => {
-  it('allows currently baselined high advisories', () => {
+  it('does not suppress a high advisory when no accepted-risk baseline remains', () => {
     const report = auditReportWith({
       name: 'sharp',
       severity: 'high',
@@ -42,7 +42,7 @@ describe('security audit baseline', () => {
       url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
     });
 
-    assert.deepEqual(collectUnbaselinedFindings(report, 'package-lock.json'), []);
+    assert.equal(collectUnbaselinedFindings(report, 'package-lock.json').length, 1);
   });
 
   it('ignores moderate production advisories for the high-severity PR gate', () => {
@@ -134,35 +134,31 @@ describe('security audit baseline', () => {
     ]);
   });
 
-  it('pins patched nanoid and js-yaml releases in every affected production lockfile', () => {
+  it('pins patched production dependency releases in every affected lockfile', () => {
     const rootLock = readRepoJson('package-lock.json');
     const blogLock = readRepoJson('blog-site/package-lock.json');
     const proLock = readRepoJson('pro-test/package-lock.json');
     const consumerPricesLock = readRepoJson('consumer-prices-core/package-lock.json');
     const rootPackage = readRepoJson('package.json');
 
-    assert.equal(rootPackage.overrides?.['markdownlint-cli2']?.['js-yaml'], '4.3.1');
+    assert.equal(rootPackage.devDependencies?.['js-yaml'], '^4.3.2');
+    assert.equal(rootPackage.overrides?.['@istanbuljs/load-nyc-config']?.['js-yaml'], '3.15.2');
+    assert.equal(rootPackage.dependencies?.['maplibre-gl'], '^6.4.1');
     assert.equal(rootLock.packages['node_modules/nanoid']?.version, '3.3.18');
-    assert.equal(rootLock.packages['node_modules/js-yaml']?.version, '4.3.1');
-    assert.equal(rootLock.packages['node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml']?.version, '3.15.1');
+    assert.equal(rootLock.packages['node_modules/js-yaml']?.version, '4.3.2');
+    assert.equal(rootLock.packages['node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml']?.version, '3.15.2');
+    assert.match(rootLock.packages['node_modules/maplibre-gl']?.version, /^6\./);
     assert.equal(blogLock.packages['node_modules/nanoid']?.version, '3.3.18');
-    assert.equal(blogLock.packages['node_modules/js-yaml']?.version, '4.3.1');
-    assert.equal(blogLock.packages['node_modules/gray-matter/node_modules/js-yaml']?.version, '3.15.1');
+    assert.equal(blogLock.packages['node_modules/js-yaml']?.version, '4.3.2');
+    assert.equal(blogLock.packages['node_modules/gray-matter/node_modules/js-yaml']?.version, '3.15.2');
     assert.equal(proLock.packages['node_modules/nanoid']?.version, '3.3.18');
-    assert.equal(consumerPricesLock.packages['node_modules/js-yaml']?.version, '4.3.1');
+    assert.equal(consumerPricesLock.packages['node_modules/js-yaml']?.version, '4.3.2');
   });
 
-  it('baselines only the unpatched image-size parser advisories in non-server tooling', () => {
-    const imageSizeAdvisories = ['GHSA-5p2g-fcmc-qvqq', 'GHSA-w3rx-r6r6-pgpr'];
-
-    assert.deepEqual(
-      BASELINE_ADVISORIES_BY_LOCKFILE['package-lock.json'],
-      ['GHSA-f88m-g3jw-g9cj', ...imageSizeAdvisories],
-    );
-    assert.deepEqual(
-      BASELINE_ADVISORIES_BY_LOCKFILE['pro-test/package-lock.json'],
-      imageSizeAdvisories,
-    );
+  it('keeps every production advisory baseline empty after patched upgrades', () => {
+    for (const entries of Object.values(BASELINE_ADVISORIES_BY_LOCKFILE)) {
+      assert.deepEqual(entries, []);
+    }
   });
 
   it('keeps consumer-prices-core on the Fastify v5 audit fix', () => {
@@ -227,30 +223,12 @@ describe('security audit baseline', () => {
             url: 'https://github.com/advisories/GHSA-f88m-g3jw-g9cj',
           }],
         },
-        'image-size': {
-          name: 'image-size',
-          severity: 'high',
-          via: [
-            {
-              name: 'image-size',
-              severity: 'high',
-              title: 'image-size JXL and HEIF parser denial of service',
-              url: 'https://github.com/advisories/GHSA-5p2g-fcmc-qvqq',
-            },
-            {
-              name: 'image-size',
-              severity: 'high',
-              title: 'image-size ICNS parser denial of service',
-              url: 'https://github.com/advisories/GHSA-w3rx-r6r6-pgpr',
-            },
-          ],
-        },
+
       },
     };
 
-    // Pro-test's unpatched image-size advisories are present, so neither is stale.
+    // Empty baselines cannot produce stale entries.
     assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), []);
-    // Root's baselined sharp and image-size advisories are all present.
     assert.deepEqual(collectStaleBaselineEntries(report, 'package-lock.json'), []);
   });
 

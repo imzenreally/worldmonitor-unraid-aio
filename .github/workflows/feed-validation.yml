@@ -5,14 +5,13 @@ name: Feed Validation
 # make GitHub runners hit arbitrary URLs (SSRF surface). PR CI relies on the
 # static tests in test:data + the digest-image build smoke instead.
 #
+# This fork retains push validation for feed/allowlist changes because the SSRF
+# guardrail protects code shipped in the AIO image. It does not run a daily
+# hosted-style health monitor over upstream's third-party feed registry.
+#
 # Triggers:
-#   - push to main: catches drift introduced by merged registry edits
-#   - schedule (daily 00:00 UTC): catches third-party feed outages on a cadence
-#     operators can act on without staring at PR checks. Earlier 6h cadence
-#     was 4× the necessary discovery rate — feed outages don't change that
-#     fast and 542 feeds × 4 runs/day was wasted runner-minutes + third-
-#     party-fetch volume that no one acted on.
-#   - workflow_dispatch: manual re-runs from the Actions UI
+#   - relevant pushes to main
+#   - workflow_dispatch for deliberate diagnosis
 #
 # The --ci flag enforces three guardrails inside scripts/validate-rss-feeds.mjs:
 #   1. Reject non-https URLs (no plaintext, no file://)
@@ -32,8 +31,6 @@ on:
       - 'api/_rss-allowed-domains.js'
       - 'shared/rss-allowed-domains.json'
       - '.github/workflows/feed-validation.yml'
-  schedule:
-    - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
