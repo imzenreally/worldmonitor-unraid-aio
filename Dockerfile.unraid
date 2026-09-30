@@ -29,9 +29,9 @@ LABEL org.opencontainers.image.title="World Monitor AIO for Unraid" \
 RUN apk add --no-cache \
       valkey=9.0.4-r0 \
       valkey-cli=9.0.4-r0 \
-      curl=8.21.0-r0 \
+      curl=8.22.0-r0 \
       coreutils=9.11-r0 \
-      openssl=3.5.7-r0 \
+      openssl=3.5.9-r0 \
       su-exec=0.3-r0 && \
     mkdir -p /config /app/docker/unraid && \
     chown appuser:appgroup /config /app/docker/unraid
